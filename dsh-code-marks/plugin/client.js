@@ -17,6 +17,7 @@ window.__ModuleLoader__.load({
     const FLASH_ATTR = 'data-dsh-cm-flash'
     const RAIL_ATTR = 'data-dsh-cm-rail'
     const TIP_ATTR = 'data-dsh-cm-tip'
+    const TOAST_ATTR = 'data-dsh-cm-toast'
     const OWN_ATTR = 'data-dsh-cm'
     const LS_TAGS = 'dsh.code-marks.v1.tags'
     const LS_MARKS = 'dsh.code.marks.v2.' // + sessionId
@@ -732,6 +733,7 @@ window.__ModuleLoader__.load({
       ensureStyles()
       let toolbar = null
       let pending = null
+      let pendingRect = null
       let hideTimer = 0
 
       const currentSession = () => {
@@ -748,11 +750,37 @@ window.__ModuleLoader__.load({
           toolbar = null
         }
         pending = null
+        pendingRect = null
       }
 
       function scheduleHide() {
         window.clearTimeout(hideTimer)
         hideTimer = window.setTimeout(hide, 120)
+      }
+
+      /** One short confirmation where the selection was — no column, no focus change. */
+      function toast(text, rect, color) {
+        for (const stale of document.querySelectorAll(`[${TOAST_ATTR}]`)) stale.remove()
+        const element = document.createElement('div')
+        element.setAttribute(TOAST_ATTR, '')
+        element.setAttribute(OWN_ATTR, '')
+        element.setAttribute('role', 'status')
+        const dot = document.createElement('i')
+        dot.style.background = color
+        element.appendChild(dot)
+        element.appendChild(document.createTextNode(text))
+        document.body.appendChild(element)
+        const own = element.getBoundingClientRect()
+        const anchor = rect ?? { left: window.innerWidth / 2, width: 0, top: window.innerHeight / 2, height: 0 }
+        const left = Math.min(Math.max(8, anchor.left + anchor.width / 2 - own.width / 2), window.innerWidth - own.width - 8)
+        const top = Math.max(8, anchor.top - own.height - 10)
+        element.style.left = `${Math.round(left)}px`
+        element.style.top = `${Math.round(top)}px`
+        element.classList.add('dcm-toast-in')
+        window.setTimeout(() => {
+          element.classList.add('dcm-toast-out')
+          window.setTimeout(() => element.remove(), 240)
+        }, 1500)
       }
 
       function markWith(tag) {
@@ -769,6 +797,7 @@ window.__ModuleLoader__.load({
           note: '',
           createdAt: Date.now(),
         }
+        const rect = pendingRect
         store.addMark(sessionId, mark)
         hide()
         try {
@@ -778,7 +807,9 @@ window.__ModuleLoader__.load({
           /* ignore */
         }
         refreshHighlights(sessionId, null)
-        openPanel()
+        // Deliberately not opening the right column: the confirmation lives where
+        // the selection was, and the rail bar is already there to click.
+        toast(`已标记「${tag.name}」`, rect, paletteOf(tag.color).dot)
       }
 
       function addTagAndMark(input) {
@@ -869,6 +900,7 @@ window.__ModuleLoader__.load({
         pending = anchor
         const rects = range.getClientRects()
         const last = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect()
+        pendingRect = last
         toolbar = build(last)
       }
 
@@ -1160,24 +1192,6 @@ window.__ModuleLoader__.load({
           rail.remove()
           tip.remove()
         },
-      }
-    }
-    //#endregion
-
-    //#region open the panel
-    /**
-     * Reveal the marks tab for the on-screen Session. `openTab` also expands the
-     * column, because content the user cannot see does not count as opened.
-     */
-    function openPanel() {
-      try {
-        const controller = ctxRef?.sidebarRight
-        if (controller === undefined) return
-        // `openTab` throws when no Session surface is mounted; a mark always has one.
-        if (controller.mounted?.getSnapshot?.() === undefined) return
-        controller.openTab(KIND)
-      } catch (error) {
-        console.warn('[dsh-code-marks] could not open the marks tab:', error)
       }
     }
     //#endregion
@@ -1597,7 +1611,7 @@ window.__ModuleLoader__.load({
 .dcm-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;}
 .dcm-color{height:22px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));background:transparent;color:inherit;font-size:11px;}
 .dcm-notice{position:sticky;bottom:0;margin:0 10px 10px;padding:7px 9px;border-radius:8px;background:rgba(245,158,11,.14);color:var(--dsw-alias-label-primary,#1f2328);font-size:11.5px;line-height:1.5;}
-[${TOOLBAR_ATTR}],[${TIP_ATTR}]{--dcm-pop-bg:#232324;--dcm-pop-fg:#ececee;--dcm-pop-fg-dim:#c6c6cd;--dcm-pop-fg-faint:#a2a2aa;--dcm-pop-line:rgba(255,255,255,.13);--dcm-pop-hover:rgba(255,255,255,.09);}
+[${TOOLBAR_ATTR}],[${TIP_ATTR}],[${TOAST_ATTR}]{--dcm-pop-bg:#232324;--dcm-pop-fg:#ececee;--dcm-pop-fg-dim:#c6c6cd;--dcm-pop-fg-faint:#a2a2aa;--dcm-pop-line:rgba(255,255,255,.13);--dcm-pop-hover:rgba(255,255,255,.09);}
 /* The two floating surfaces are painted #232324 on purpose, in both themes, so
    their foregrounds are a fixed light palette tuned against that one background. */
 [${TOOLBAR_ATTR}]{position:fixed;z-index:2147483002;display:flex;align-items:center;gap:3px;padding:4px;border-radius:10px;background:var(--dcm-pop-bg);border:1px solid var(--dcm-pop-line);box-shadow:0 10px 30px rgba(0,0,0,.45);font-size:12px;color:var(--dcm-pop-fg);}
@@ -1626,6 +1640,10 @@ window.__ModuleLoader__.load({
 .dcm-tip-quote-code{font-family:ui-monospace,SFMono-Regular,"Cascadia Code",Consolas,monospace;font-size:11px;color:var(--dcm-pop-fg);}
 .dcm-tip-meta{margin-top:4px;font-size:10px;color:var(--dcm-pop-fg-faint);}
 .dcm-tip-notice{font-size:11.5px;line-height:1.5;color:var(--dcm-pop-fg);}
+[${TOAST_ATTR}]{position:fixed;z-index:2147483004;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:var(--dcm-pop-bg);border:1px solid var(--dcm-pop-line);box-shadow:0 10px 24px rgba(0,0,0,.42);color:var(--dcm-pop-fg);font-size:12px;pointer-events:none;opacity:0;transform:translateY(2px);transition:opacity .18s ease-out,transform .18s ease-out;}
+[${TOAST_ATTR}].dcm-toast-in{opacity:1;transform:none;}
+[${TOAST_ATTR}].dcm-toast-out{opacity:0;transform:translateY(-2px);}
+[${TOAST_ATTR}] i{width:7px;height:7px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
 ${CSS_HIGHLIGHT_BASE}
 @keyframes dsh-cm-flash{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.02)}}
 `

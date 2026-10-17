@@ -287,10 +287,20 @@
     check('toolbar: clicking a tag stores one more mark', marksAfterPick.length === 3, marksAfterPick.length)
     check('toolbar: mark carries the chosen tag', marksAfterPick[0]?.tagId === t.store.getSnapshot().tags[0].id, marksAfterPick[0]?.tagId)
     check('toolbar: mark quotes exactly the selection', marksAfterPick[0]?.quote === '核心是把问', marksAfterPick[0]?.quote)
-    check('toolbar: marking opens the marks tab', captured.openedKind === 'code-marks', captured.openedKind)
+    check('toolbar: marking does NOT open the right column', captured.openedKind === undefined, captured.openedKind)
     check('toolbar: hides itself after marking', document.querySelector('[data-dsh-cm-toolbar]') === null)
+    const toast = document.querySelector('[data-dsh-cm-toast]')
+    check('toolbar: a confirmation appears where the selection was', toast !== null && toast.textContent.includes('核心逻辑'), toast && toast.textContent)
+    const toastStyle = toast === null ? {} : getComputedStyle(toast)
+    check('style: the confirmation is painted #232324', toastStyle.backgroundColor === 'rgb(35, 35, 36)', toastStyle.backgroundColor)
+    check('style: confirmation text contrast >= 7', contrast(toastStyle.color, toastStyle.backgroundColor) >= 7, contrast(toastStyle.color, toastStyle.backgroundColor).toFixed(2))
+    check('toolbar: the confirmation does not steal pointer events', toastStyle.pointerEvents === 'none', toastStyle.pointerEvents)
     const highlightKeys = window.CSS && CSS.highlights ? [...CSS.highlights.keys()] : []
     check('highlight: a tag highlight is registered', highlightKeys.some((key) => key.startsWith('dsh-cm-')), highlightKeys)
+
+    await tick(2000)
+    check('toolbar: the confirmation removes itself', document.querySelector('[data-dsh-cm-toast]') === null)
+    check('toolbar: the mark survives without the column', t.store.marksOf('s1').length === 3, t.store.marksOf('s1').length)
 
     // ---- 8b. edge rail: one deep-blue bar per mark, no sidebar needed
     const farMark = t.store.marksOf('s1').find((entry) => entry.quote === 'if (n == 1) return a[0];')
