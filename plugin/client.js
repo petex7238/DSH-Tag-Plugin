@@ -1066,6 +1066,7 @@ window.__ModuleLoader__.load({
      * conversation — the same visual language as the shell's own turn ticks
      * (20x2 rounded bar, 10px pitch, right-aligned), so jumping to a mark needs
      * neither the right column nor the transcript's scroll position.
+     * Bars read top-down in transcript order.
      */
     const RAIL_PITCH = 10
 
