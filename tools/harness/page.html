@@ -59,6 +59,25 @@
   const results = [];
   const check = (name, ok, detail) => results.push({ name, ok: Boolean(ok), detail: detail === undefined ? null : detail });
 
+  /** WCAG contrast ratio between two computed `rgb()` colors. */
+  function contrast(fg, bg) {
+    const parse = (value) => {
+      const match = /rgba?\(([^)]+)\)/.exec(value ?? '');
+      if (match === null) return null;
+      return match[1].split(',').slice(0, 3).map((part) => Number.parseFloat(part) / 255);
+    };
+    const luminance = (rgb) => {
+      if (rgb === null) return null;
+      const [r, g, b] = rgb.map((channel) => (channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const a = luminance(parse(fg));
+    const b = luminance(parse(bg));
+    if (a === null || b === null) return 0;
+    const [hi, lo] = a > b ? [a, b] : [b, a];
+    return (hi + 0.05) / (lo + 0.05);
+  }
+
   function bootModule() {
     const entry = window.__entry;
     check('module: registered one entry', entry && entry.id === 'dsh-code-marks', entry && entry.id);
@@ -256,6 +275,12 @@
     check('toolbar: appears for a selection inside a markable row', toolbar !== null, toolbar && toolbar.textContent)
     const tagButtons = toolbar === null ? [] : [...toolbar.querySelectorAll('.dcm-toolbar-tag')]
     check('toolbar: offers the four seeded tags', tagButtons.length === 4, tagButtons.length)
+    const toolbarStyle = toolbar === null ? {} : getComputedStyle(toolbar)
+    check('style: the selection toolbar is painted #232324', toolbarStyle.backgroundColor === 'rgb(35, 35, 36)', toolbarStyle.backgroundColor)
+    check('style: toolbar text is light', toolbarStyle.color === 'rgb(236, 236, 238)', toolbarStyle.color)
+    check('style: toolbar text contrast >= 7', contrast(toolbarStyle.color, toolbarStyle.backgroundColor) >= 7, contrast(toolbarStyle.color, toolbarStyle.backgroundColor).toFixed(2))
+    const labelColor = toolbar === null ? '' : getComputedStyle(toolbar.querySelector('.dcm-toolbar-label')).color
+    check('style: toolbar hint text still readable (>= 4.5)', contrast(labelColor, toolbarStyle.backgroundColor) >= 4.5, contrast(labelColor, toolbarStyle.backgroundColor).toFixed(2))
     tagButtons[0]?.click()
     await tick(80)
     const marksAfterPick = t.store.marksOf('s1')
@@ -283,6 +308,13 @@
     bars[0]?.dispatchEvent(new Event('pointerenter'))
     check('rail: hover shows the tag name', railTip !== null && railTip.style.display === 'block' && railTip.textContent.includes(ordered[0] ? (t.store.getSnapshot().tags.find((tag) => tag.id === ordered[0].tagId)?.name ?? '') : ''), railTip && railTip.textContent)
     check('rail: hover shows the quoted text', railTip !== null && railTip.textContent.includes(ordered[0]?.quote.slice(0, 8) ?? '\u0000'), railTip && railTip.textContent)
+    const tipStyle = railTip === null ? {} : getComputedStyle(railTip)
+    check('style: the rail card is painted #232324', tipStyle.backgroundColor === 'rgb(35, 35, 36)', tipStyle.backgroundColor)
+    check('style: rail card text is light', tipStyle.color === 'rgb(236, 236, 238)', tipStyle.color)
+    check('style: rail card text contrast >= 7', contrast(tipStyle.color, tipStyle.backgroundColor) >= 7, contrast(tipStyle.color, tipStyle.backgroundColor).toFixed(2))
+    const quoteEl = railTip === null ? null : railTip.querySelector('.dcm-tip-quote')
+    const quoteColor = quoteEl === null ? '' : getComputedStyle(quoteEl).color
+    check('style: rail card quote contrast >= 4.5', contrast(quoteColor, tipStyle.backgroundColor) >= 4.5, contrast(quoteColor, tipStyle.backgroundColor).toFixed(2))
 
     // clicking a far bar jumps without ever opening the panel
     scroller.scrollTop = 0
