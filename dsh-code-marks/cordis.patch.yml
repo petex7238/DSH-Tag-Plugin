@@ -1,0 +1,8 @@
+# dsh-code-marks bundle patch: inserts the plugin into the profile roster.
+#
+# Host half (exports ".") does nothing — this plugin is browser-only.
+# Browser half (exports "./client") registers one right-sidebar tab type
+# (`kind: code-marks`) plus its body, and the selection-toolbar overlay.
+- insert:
+    - id: code-marks
+      name: dsh-code-marks

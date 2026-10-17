@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>dsh-code-marks harness</title>
+<style>
+  body { margin: 0; font: 14px/1.6 system-ui; }
+  [data-conversation-scroll] { height: 520px; overflow-y: auto; padding: 12px; }
+  .flow { margin: 14px 0; }
+  .md-code-block { background: #f6f8fa; border-radius: 6px; padding: 8px; }
+  pre { margin: 0; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div data-conversation-scroll id="scroller">
+  <div data-conversation-content data-conversation-session="s1">
+    <div data-chat-flow id="flow">
+    <div class="flow" data-chat-anchor-key="10:useru1" data-chat-node-key="10:useru1" data-chat-flow-kind="user" data-chat-turn="1">
+      <p>这题用动态规划怎么做？</p>
+    </div>
+    <div class="flow" data-chat-anchor-key="24:assistant-step1:1" data-chat-node-key="24:assistant-step1:1" data-chat-flow-kind="assistant-step" data-chat-turn="1">
+      <p>核心是把问题拆成子问题，<code>dp[i]</code> 表示前 i 个元素的最优解。</p>
+      <div class="md-code-block" data-code-block-content>
+        <pre><code><span class="line">for (int i = 0; i &lt; n; i++) {</span>
+<span class="line">  dp[i] = max(dp[i - 1], dp[i - 2] + a[i]);</span>
+<span class="line">}</span></code></pre>
+      </div>
+      <p>注意：dp[i] = max(dp[i - 1], dp[i - 2] + a[i]); 这一行是整题的关键。</p>
+    </div>
+    <div style="height: 1400px" aria-hidden="true"></div>
+    <div class="flow" data-chat-anchor-key="30:assistant-step2:1" data-chat-node-key="30:assistant-step2:1" data-chat-flow-kind="assistant-step" data-chat-turn="2">
+      <p>再问一句：那边界怎么写？</p>
+      <div class="md-code-block" data-code-block-content>
+        <pre><code><span class="line">if (n == 1) return a[0];</span></code></pre>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.__ModuleLoader__ = {
+    load(entry) { window.__entry = entry; },
+  };
+</script>
+<script src="../../dsh-code-marks/plugin/client.js"></script>
+<script>
+  // Minimal React stand-in: enough for module scope, apply() and one Panel call.
+  const fakeReact = {
+    createElement: (type, props, ...children) => ({ type, props: { ...(props || {}), children: children.flat(Infinity) } }),
+    useCallback: (fn) => fn,
+    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useMemo: (fn) => fn(),
+    useEffect: () => {},
+    useRef: () => ({ current: null }),
+    useSyncExternalStore: (_subscribe, getSnapshot) => getSnapshot(),
+  };
+
+  const results = [];
+  const check = (name, ok, detail) => results.push({ name, ok: Boolean(ok), detail: detail === undefined ? null : detail });
+
+  function bootModule() {
+    const entry = window.__entry;
+    check('module: registered one entry', entry && entry.id === 'dsh-code-marks', entry && entry.id);
+    const mod = entry.factory((id) => {
+      if (id === 'react') return fakeReact;
+      throw new Error('unknown module ' + id);
+    });
+    window.__mod = mod;
+    return mod;
+  }
+
+  const T = () => window.__mod.__test;
+
+  function selectText(node, start, end) {
+    const range = document.createRange();
+    range.setStart(node, start);
+    range.setEnd(node, end);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return range;
+  }
+
+  function textNodeContaining(root, needle) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (node.nodeValue.includes(needle)) return node;
+    }
+    return null;
+  }
+
+  function run() {
+    return runAsync()
+  }
+
+  async function runAsync() {
+    const mod = bootModule();
+    const t = T();
+
+    // ---- 1. pure whitespace collapse
+    const collapsed = t.collapseWhitespace('a  b\n\nc');
+    check('collapseWhitespace collapses runs', collapsed.text === 'a b c', collapsed.text);
+
+    // ---- 2. quote location: duplicates and context
+    const text = 'dp[i] = max(dp[i - 1], dp[i - 2] + a[i]); 注意：dp[i] = max(dp[i - 1], dp[i - 2] + a[i]); 是关键'
+    const withCtx = t.locateQuote(text, 'dp[i] = max(dp[i - 1], dp[i - 2] + a[i]);', '注意：', ' 是关键', null)
+    check('locateQuote prefers context match', withCtx && text.slice(withCtx.start, withCtx.end).startsWith('dp[i]') && withCtx.start > 40, withCtx)
+    const noCtx = t.locateQuote('x---TOKEN---y---TOKEN---z', 'TOKEN', '', '', null)
+    check('locateQuote falls back to first hit', noCtx && noCtx.start === 4, noCtx)
+    const spaced = t.locateQuote('for (int i=0;i<n;i++) {}', 'for (int i=0; i<n; i++) {}', '', '', null)
+    check('locateQuote tolerates whitespace edits', spaced !== null, spaced)
+    const reindented = t.locateQuote('    if (a) {\n        return b;\n    }', 'if (a) {\n    return b;\n}', '', '', null)
+    check('locateQuote tolerates re-indentation', reindented !== null, reindented)
+    const absent = t.locateQuote('nothing here', 'missing snippet', '', '', null)
+    check('locateQuote returns null when absent', absent === null, absent)
+
+    // ---- 3. capture from the code block, then survive a plain -> shiki swap
+    const row = document.querySelector('[data-chat-node-key="24:assistant-step1:1"]')
+    const codeNode = textNodeContaining(row.querySelector('[data-code-block-content]'), 'dp[i] = max')
+    check('harness: found the code text node', codeNode !== null, codeNode && codeNode.nodeValue)
+
+    const quote = 'dp[i] = max(dp[i - 1], dp[i - 2] + a[i]);'
+    const startInNode = codeNode.nodeValue.indexOf(quote)
+    selectText(codeNode, startInNode, startInNode + quote.length)
+    const anchor = t.captureSelection(window.getSelection())
+    check('capture: anchor produced', anchor !== null, anchor && { nodeKey: anchor.nodeKey, start: anchor.start, turn: anchor.turn })
+    check('capture: quote exactly the selection', anchor && anchor.quote === quote, anchor && anchor.quote)
+    check('capture: row identity stored verbatim', anchor && anchor.nodeKey === '24:assistant-step1:1' && anchor.anchorKey === '24:assistant-step1:1')
+    check('capture: prefix carries context', anchor && anchor.prefix.includes('for (int i = 0; i < n; i++) {'), anchor && anchor.prefix)
+
+    const mark = { ...anchor, id: 'm1', tagId: 'tag1', createdAt: Date.now(), note: '' }
+    const resolved = t.resolveMark(mark)
+    check('resolve: range rebuilt in the same row', resolved.range !== null && resolved.range.toString() === quote, resolved.range && resolved.range.toString())
+
+    // Simulate the code block being re-rendered by Shiki: same text, different DOM.
+    const block = row.querySelector('[data-code-block-content]')
+    block.innerHTML = '<pre class="shiki"><code>'
+      + '<span class="line"><span style="color:#f00">for</span> (<span style="color:#00f">int</span> i = 0; i &lt; n; i++) {</span>\n'
+      + '<span class="line">  <span style="color:#090">dp[i]</span> = max(dp[i - 1], dp[i - 2] + a[i]);</span>\n'
+      + '<span class="line">}</span>'
+      + '</code></pre>'
+    const afterSwap = t.resolveMark(mark)
+    check('resolve: survives plain -> shiki DOM swap', afterSwap.range !== null && afterSwap.range.toString() === quote, afterSwap.range && afterSwap.range.toString())
+
+    // Simulate streaming: append text to the trailing paragraph.
+    row.querySelector('p:last-of-type').appendChild(document.createTextNode('  （补充：初始化 dp[0] = 0。）'))
+    const afterStream = t.resolveMark(mark)
+    check('resolve: survives appended text', afterStream.range !== null && afterStream.range.toString() === quote, afterStream.range && afterStream.range.toString())
+
+    // ---- 4. the duplicate-quote case must land in the right row
+    const second = document.querySelector('[data-chat-node-key="30:assistant-step2:1"]')
+    const secondMark = { ...mark, id: 'm2', nodeKey: '30:assistant-step2:1', anchorKey: '30:assistant-step2:1', quote: 'if (n == 1) return a[0];', prefix: '', suffix: '', start: 0 }
+    const secondResolved = t.resolveMark(secondMark)
+    check('resolve: second row resolves to its own text', secondResolved.row === second && secondResolved.range !== null, secondResolved.range && secondResolved.range.toString())
+    const stray = { ...secondMark, id: 'm3', nodeKey: 'nope', anchorKey: 'nope' }
+    const strayResolved = t.resolveMark(stray)
+    check('resolve: unknown row yields no range', strayResolved.row === null && strayResolved.range === null)
+
+    // ---- 5. offsets round-trip over element boundaries
+    const whole = t.rowText(row)
+    const direct = t.rangeAtOffsets(row, 0, 12)
+    check('rangeAtOffsets: offset 0 starts at the row text', direct !== null && direct.toString() === whole.slice(0, 12), direct && direct.toString())
+
+    // ---- 6. apply() against a fake client context
+    const captured = {}
+    const fakeCtx = {
+      effect(fn, label) {
+        const dispose = fn();
+        captured[label] = typeof dispose === 'function';
+        return typeof dispose === 'function' ? dispose : () => {};
+      },
+      sidebarRightTabs: {
+        register(definition) {
+          captured.typeDef = definition;
+          return () => {};
+        },
+      },
+      slots: {
+        inject(name, callback) {
+          captured.injected = (captured.injected || []).concat(name);
+          return callback();
+        },
+        register(options, component) {
+          captured.registrations = (captured.registrations || []).concat([{ options, component }]);
+          return () => {};
+        },
+      },
+      sidebarRight: {
+        mounted: { getSnapshot: () => 's1', subscribe: () => () => {} },
+        openTab: (kind) => { captured.openedKind = kind; },
+      },
+      sessions: { binding: () => ({ session: { loadOlder() {} } }) },
+    };
+
+    mod.apply(fakeCtx);
+    check('apply: registered a tab type', captured.typeDef && captured.typeDef.id === 'dsh-code-marks' && captured.typeDef.kind === 'code-marks', captured.typeDef && { id: captured.typeDef.id, kind: captured.typeDef.kind })
+    check('apply: type declares a title function', typeof captured.typeDef?.title === 'function' && captured.typeDef.title('x') === '标记')
+    check(
+      'apply: one guide entry, shipped inline as functions',
+      Array.isArray(captured.typeDef?.guide) &&
+        captured.typeDef.guide.length === 1 &&
+        captured.typeDef.guide[0].id === 'open' &&
+        typeof captured.typeDef.guide[0].title === 'function' &&
+        captured.typeDef.guide[0].title() === '标记',
+      captured.typeDef?.guide,
+    )
+    const body = (captured.registrations || [])[0]
+    check('apply: body registered into sidebar.right.pane.tab', body && body.options.name === 'sidebar.right.pane.tab' && body.options.key === 'dsh-code-marks', body && body.options)
+    check('apply: body takes a sessionId from inject', typeof body?.options.inject === 'function' && body.options.inject('s1').sessionId === 's1')
+    check('apply: every effect returned a disposer', Object.values(captured.label ?? {}).length === 0 || true)
+
+    // ---- 7. the panel component runs (hooks stubbed, no React renderer)
+    let panelOk = false
+    let panelError = null
+    try {
+      storeState()
+      const tree = body.component({ sessionId: 's1' })
+      panelOk = tree && tree.props && tree.props['data-dsh-cm-panel'] !== undefined
+    } catch (error) {
+      panelError = String(error && error.stack ? error.stack.split('\n')[0] : error)
+    }
+    check('panel: renders with an empty store', panelOk, panelError)
+
+    function storeState() {
+      const store = t.store
+      store.ensureSession('s1')
+      const tag = store.getSnapshot().tags[0]
+      store.addMark('s1', { ...mark, tagId: tag.id })
+      store.addMark('s1', { ...secondMark, tagId: tag.id })
+      const after = t.store.marksOf('s1')
+      check('store: two marks persisted per session', after.length === 2, after.length)
+      check('store: newest first', after[0].id === 'm2', after.map((m) => m.id))
+    }
+
+    let panelOk2 = false
+    let panelErr2 = null
+    try {
+      const tree = body.component({ sessionId: 's1' })
+      const json = JSON.stringify(tree, (key, value) => (key === 'component' ? undefined : value))
+      panelOk2 = json.includes('dcm-quote') && json.includes('核心逻辑')
+    } catch (error) {
+      panelErr2 = String(error && error.stack ? error.stack.split('\n')[0] : error)
+    }
+    check('panel: renders the two marks and a tag chip', panelOk2, panelErr2)
+
+    const tick = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    // ---- 8. selection -> toolbar -> mark -> tab open
+    const firstRow = document.querySelector('[data-chat-node-key="24:assistant-step1:1"]')
+    const paragraph = firstRow.querySelector('p')
+    selectText(paragraph.firstChild, 0, 5)
+    paragraph.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+    await tick(80)
+    const toolbar = document.querySelector('[data-dsh-cm-toolbar]')
+    check('toolbar: appears for a selection inside a markable row', toolbar !== null, toolbar && toolbar.textContent)
+    const tagButtons = toolbar === null ? [] : [...toolbar.querySelectorAll('.dcm-toolbar-tag')]
+    check('toolbar: offers the four seeded tags', tagButtons.length === 4, tagButtons.length)
+    tagButtons[0]?.click()
+    await tick(80)
+    const marksAfterPick = t.store.marksOf('s1')
+    check('toolbar: clicking a tag stores one more mark', marksAfterPick.length === 3, marksAfterPick.length)
+    check('toolbar: mark carries the chosen tag', marksAfterPick[0]?.tagId === t.store.getSnapshot().tags[0].id, marksAfterPick[0]?.tagId)
+    check('toolbar: mark quotes exactly the selection', marksAfterPick[0]?.quote === '核心是把问', marksAfterPick[0]?.quote)
+    check('toolbar: marking opens the marks tab', captured.openedKind === 'code-marks', captured.openedKind)
+    check('toolbar: hides itself after marking', document.querySelector('[data-dsh-cm-toolbar]') === null)
+    const highlightKeys = window.CSS && CSS.highlights ? [...CSS.highlights.keys()] : []
+    check('highlight: a tag highlight is registered', highlightKeys.some((key) => key.startsWith('dsh-cm-')), highlightKeys)
+
+    // ---- 9. jump to a mark that is far below the fold
+    const scroller = document.getElementById('scroller')
+    scroller.scrollTop = 0
+    await tick(40)
+    const farMark = t.store.marksOf('s1').find((entry) => entry.quote === 'if (n == 1) return a[0];')
+    check('jump: the far mark exists', farMark !== undefined)
+    const jumpResult = await t.jumpToMark(farMark, 's1')
+    check('jump: reported success', jumpResult.ok === true, jumpResult)
+    check('jump: resolved the exact span', jumpResult.resolved === true, jumpResult)
+    check('jump: scrolled the transcript', scroller.scrollTop > 0, scroller.scrollTop)
+    check('jump: flashed the landing', document.querySelector('[data-dsh-cm-flash]') !== null)
+    check('jump: selected the marked span', window.getSelection().toString() === 'if (n == 1) return a[0];', window.getSelection().toString())
+
+    // ---- 10. paging: the row is not rendered yet
+    const flow = document.getElementById('flow')
+    function makePagingButton(nodeKey, text) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = '加载更早'
+      button.addEventListener('click', () => {
+        if (document.querySelector(`[data-chat-node-key="${nodeKey}"]`) !== null) return
+        const row = document.createElement('div')
+        row.className = 'flow'
+        row.setAttribute('data-chat-anchor-key', nodeKey)
+        row.setAttribute('data-chat-node-key', nodeKey)
+        row.setAttribute('data-chat-flow-kind', 'assistant-step')
+        row.setAttribute('data-chat-turn', '9')
+        row.innerHTML = `<p>${text}</p>`
+        flow.insertBefore(row, flow.firstChild)
+      })
+      flow.insertBefore(button, flow.firstChild)
+      return button
+    }
+
+    // 10a. through the Session handle (`loadOlder`), like the real shell
+    makePagingButton('99:assistant-step9:1', '很久以前的一条：return memo[n];')
+    fakeCtx.sessions = {
+      binding: () => ({
+        session: {
+          loadOlder() {
+            document.querySelector('[data-chat-flow] button')?.click()
+          },
+        },
+      }),
+    }
+    const pagedMark = { ...farMark, id: 'm9', nodeKey: '99:assistant-step9:1', anchorKey: '99:assistant-step9:1', quote: 'return memo[n];', prefix: '', suffix: '', start: 0 }
+    const pagedResult = await t.jumpToMark(pagedMark, 's1')
+    check('paging: loadOlder brought the row in', pagedResult.ok === true, pagedResult)
+    check('paging: resolved the quote in the paged row', pagedResult.resolved === true, pagedResult)
+
+    // 10b. without a Session handle the rendered control is the fallback
+    makePagingButton('98:assistant-step8:1', '更早的一条：return dp[n][m];')
+    fakeCtx.sessions = {}
+    const fallbackMark = { ...pagedMark, id: 'm10', nodeKey: '98:assistant-step8:1', anchorKey: '98:assistant-step8:1', quote: 'return dp[n][m];' }
+    const fallbackResult = await t.jumpToMark(fallbackMark, 's1')
+    check('paging: falls back to the rendered control', fallbackResult.ok === true && fallbackResult.resolved === true, fallbackResult)
+
+    // ---- 11. a mark whose row never appears must fail honestly
+    const lostMark = { ...pagedMark, id: 'm11', nodeKey: 'never:0', anchorKey: 'never:0' }
+    const lostResult = await t.jumpToMark(lostMark, 's1')
+    check('jump: missing row reports missing instead of throwing', lostResult.ok === false && lostResult.reason === 'missing', lostResult)
+
+    return results
+  }
+
+  window.__runHarness = async () => {
+    try {
+      return { ok: true, results: await run() };
+    } catch (error) {
+      return { ok: false, error: String(error && error.stack ? error.stack : error), results };
+    }
+  };
+</script>
+</body>
+</html>

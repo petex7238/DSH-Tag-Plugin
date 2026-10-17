@@ -1,0 +1,11 @@
+# Extracted third-party DSH packages kept only as reading material while
+# developing the plugin. They are not mine to redistribute, and they can be
+# regenerated with tools/asar-extract.mjs at any time.
+refs/
+
+# Scratch output from the DOM probe / harness runs.
+tmp/
+
+# Never commit installed dependencies or logs.
+node_modules/
+*.log

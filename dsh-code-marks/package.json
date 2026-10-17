@@ -1,0 +1,30 @@
+{
+  "name": "dsh-code-marks",
+  "version": "0.1.0",
+  "description": "Mark code blocks and sentences in the conversation, keep them in the right sidebar, and jump back to them.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./plugin/index.mjs",
+    "./client": "./plugin/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "files": [
+    "plugin",
+    "cordis.patch.yml",
+    "README.md"
+  ]
+}
