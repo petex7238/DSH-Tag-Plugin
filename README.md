@@ -1,8 +1,44 @@
 # dsh-code-marks
 
-在 DSH 对话里**选中一段代码或一句话 → 打个标签**，它就固定下来：对话右边缘长出一根深蓝短条，右侧栏的「标记」页签里也有一条记录。点任意一处，那段原文**瞬时**跳到**可视区正中间**（没有滚动动画）、闪一下并选中。
+> Select code or a sentence in a DeepSeek Harness conversation, tag it, and jump back to **that exact line** later — from a rail of deep-blue bars on the conversation's right edge, or from a right-sidebar tab. Marks live outside the transcript, so the next twenty follow-up questions cannot push them away.
+
+在 DSH 对话里**选中一段代码或一句话 → 打个标签**，它就固定下来：对话右边缘长出一根深蓝短条，右侧栏的「标记」页签里也有一条记录。点任意一处，那段原文**瞬时**跳到**可视区正中间**、闪一下并选中。
 
 解决的是这件事：追问一多，正确题解就被顶上去，回看要翻很久。标记存在对话流之外，所以**永远顶不掉**。
+
+- 标注对象：助手回答里的代码段与文字（跨行选也支持）
+- 标签自定义：可新建 / 改名 / 换色 / 删除，6 种颜色
+- 跳转精确到**字符**，不是"大约回到那条消息"
+- 不上传、不同步、不进会话日志：全部存在本机 `localStorage`
+
+## 装上
+
+需要 DSH 0.2.0-rc.2 或更新（桌面端或 `dsh web`）。三种方式选一种：
+
+**方式一 · 从 npm（发布后可用）**
+
+```bash
+dsh plugin --profile desktop add dsh-code-marks
+```
+
+或在桌面端：侧栏 **插件** → 安装 → 填入 `dsh-code-marks`。
+
+**方式二 · 直接从 GitHub（现在就能用，不需要 npm）**
+
+```bash
+dsh plugin --profile desktop add "github:petex7238/DSH-Tag-Plugin#main"
+```
+
+**方式三 · 本地路径（改代码 / 开发）**
+
+```bash
+git clone https://github.com/petex7238/DSH-Tag-Plugin.git
+dsh plugin --profile desktop add "/absolute/path/to/DSH-Tag-Plugin"
+```
+
+用本地路径装时，仓库目录会被 `link` 进 profile，改 `plugin/client.js` 会被客户端 HMR 直接热替换，不用重启 DSH。
+
+装完即生效；如果页面没反应，刷新一次（F5）。
 
 ## 怎么用
 
@@ -42,14 +78,16 @@
 
 这两个浮层（框选后弹出的标签条、长条悬停出的小卡片）固定用 **`#232324` 深底 + 浅色字**，不跟随主题：深色浮层在浅色页面上更抓眼，浅色主题下也不会变成白底黑字看不清。文字对比度都在 4.5:1 以上（正文 7:1 以上）。
 
-## 数据存在哪
+## 数据与隐私
 
-都在这台机器的浏览器存储里（`localStorage`），不上传、不进会话日志：
+都在这台机器的浏览器存储里（`localStorage`），不上传、不进会话日志、不产生任何网络请求：
 
 - `dsh.code.marks.v2.<sessionId>`：这个会话的标记（原文、位置、标签、备注、时间）
 - `dsh.code.marks.v1.tags`：标签表（全局共享，所有会话通用）
 
-每个会话的标记互相独立；换会话就看那个会话的标记。清空：设置里清站点数据，或删掉这两个 key。
+每个会话的标记互相独立；换会话就看那个会话的标记。清空：清站点数据，或删掉这两个 key。
+
+插件本身**没有 Host 半侧逻辑**：`plugin/index.mjs` 是一个空 `apply()`，只为了让 DSH 有一个可加载的 Loader 条目、从而把浏览器半侧的 bundle 发出去。
 
 ## 它是怎么做到「跳得准」的
 
@@ -64,23 +102,35 @@
 
 高亮用 **CSS Custom Highlight API**（`CSS.highlights` + `::highlight()`），只建 Range 不改 DOM，所以不会被 React 的 diff 冲掉；对话变化时以 240ms 去抖重建 Range。
 
+跳转是按"标记文本的 Range"算的，不是按消息行：一条长回答可以几千像素高，行居中会让人"跳过去却看不见"。落点对齐到对话可视带的中线（扣掉底部输入框占位），并且**瞬时**完成、不做滚动动画。
+
 ## 已知限制
 
 - **折叠起来的过程组**里的文字选不到；要先展开它。标记落在被折叠的内容里时，点标记会尝试点开那个组，失败则提示「先往上滚一点」。
 - 原文被改写（比如重新生成过这条回答）到认不出来的程度时，只能定位到这条消息，高亮位置对不上——面板会明确提示，不会瞎标。
 - 跳转是程序化滚动，DSH 会认为「读者自己滚了」，于是暂停「跟随最新」；对话自己跳轮次也是这样。
 - 只对**助手的回答**（`assistant-step`）开放标记；工具调用、终端输出暂不支持。
-- 标记只存在本机浏览器，不跨设备同步。
+- 标记只存在本机浏览器，不跨设备同步；也没有导出/导入。
 
 ## 卸载
 
-DSH 设置 → 插件 → 找到 `dsh-code-marks` → 停用或卸载（也可以 `plugin_manager` 的 `remove_bundle`）。卸载后浏览器里的标记数据仍在，重装即回来。
+DSH 设置 → 插件 → 找到 `dsh-code-marks` → 停用或卸载。卸载后浏览器里的标记数据仍在，重装即回来。
 
 ## 开发
 
-```powershell
-# 逻辑测试台（Chrome headless，100 项：锚定 / 上下文匹配 / 换 DOM / 流式追加 / 翻页 / 悬浮条 / 边缘长条 / 深色浮层对比度 / 右键菜单与撤销 / 面板渲染）
-node tools/harness/run.mjs
+插件是**手写的浏览器 bundle**，没有构建步骤：`plugin/client.js` 就是一个 `window.__ModuleLoader__.load({ id, factory })` 的经典脚本，DSH 的模块系统直接发它。
+
+```bash
+npm install          # 只为测试台装 puppeteer-core
+npm test             # 100 项断言，headless Chrome
 ```
 
-插件以 `link:` 方式装在 desktop profile 里，改 `plugin/client.js` 会被客户端 HMR 直接热替换，不用重启。
+测试台 `tools/harness/` 用一份合成的对话 DOM 跑真实 Chromium，覆盖：锚定与四级降级、重复原文、代码块 plain→Shiki 换 DOM、流式追加、翻页、悬浮标签条、边缘长条（含右键菜单/撤销）、深色浮层对比度、跳转居中与瞬时落位、面板渲染。
+
+- `CHROME_PATH` 可指定浏览器；否则自动找 Chrome/Edge/Chromium。
+- 没有 `puppeteer-core` 时会退而使用 DSH profile 里已有的那一份（需要 `DSH_HOME` + `DSH_PROFILE`）。
+- `设计说明.md` 记录了每个设计决策的理由与验证矩阵（中文）。
+
+## 许可
+
+MIT，见 [LICENSE](LICENSE)。

@@ -1,0 +1,67 @@
+{
+  "name": "dsh-code-marks",
+  "version": "0.1.0",
+  "description": "Mark code blocks and sentences in a DeepSeek Harness conversation, keep them in a right-sidebar tab and an edge rail, and jump straight back to the exact line.",
+  "type": "module",
+  "license": "MIT",
+  "author": "petex7238",
+  "homepage": "https://github.com/petex7238/DSH-Tag-Plugin#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/petex7238/DSH-Tag-Plugin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/petex7238/DSH-Tag-Plugin/issues"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "deepseek-harness",
+    "deepseek",
+    "annotation",
+    "bookmark",
+    "mark",
+    "highlight",
+    "code-review",
+    "study"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.0-rc.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": "./plugin/index.mjs",
+    "./client": "./plugin/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  },
+  "files": [
+    "plugin",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node tools/harness/run.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.13.0"
+  }
+}

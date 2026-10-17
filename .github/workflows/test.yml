@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the browser driver
+        run: npm install --no-audit --no-fund
+
+      # GitHub's ubuntu images ship Google Chrome at /usr/bin/google-chrome,
+      # which the harness picks up on its own.
+      - name: Run the harness
+        run: npm test
