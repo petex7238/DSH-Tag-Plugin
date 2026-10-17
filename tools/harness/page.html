@@ -267,11 +267,61 @@
     const highlightKeys = window.CSS && CSS.highlights ? [...CSS.highlights.keys()] : []
     check('highlight: a tag highlight is registered', highlightKeys.some((key) => key.startsWith('dsh-cm-')), highlightKeys)
 
-    // ---- 9. jump to a mark that is far below the fold
+    // ---- 8b. edge rail: one deep-blue bar per mark, no sidebar needed
+    const farMark = t.store.marksOf('s1').find((entry) => entry.quote === 'if (n == 1) return a[0];')
     const scroller = document.getElementById('scroller')
+    const rail = document.querySelector('[data-dsh-cm-rail]')
+    check('rail: mounts at document level', rail !== null)
+    const bars = rail === null ? [] : [...rail.querySelectorAll('.dcm-rail-bar')]
+    const sessionMarks = t.store.marksOf('s1')
+    check('rail: one bar per mark of the session', bars.length === sessionMarks.length, `${bars.length} vs ${sessionMarks.length}`)
+    check('rail: visible and hugging the right edge', rail !== null && rail.style.display === 'flex' && parseFloat(rail.style.right) >= 4, rail && { display: rail.style.display, right: rail.style.right, top: rail.style.top })
+    const ordered = [...sessionMarks].sort((a, b) => (a.turn - b.turn) || (a.start - b.start))
+    check('rail: bars read top-down in transcript order', bars.length === ordered.length && bars.every((bar, index) => bar.dataset.dcmBar === ordered[index].id), bars.map((bar) => bar.dataset.dcmBar))
+
+    const railTip = document.querySelector('[data-dsh-cm-tip]')
+    bars[0]?.dispatchEvent(new Event('pointerenter'))
+    check('rail: hover shows the tag name', railTip !== null && railTip.style.display === 'block' && railTip.textContent.includes(ordered[0] ? (t.store.getSnapshot().tags.find((tag) => tag.id === ordered[0].tagId)?.name ?? '') : ''), railTip && railTip.textContent)
+    check('rail: hover shows the quoted text', railTip !== null && railTip.textContent.includes(ordered[0]?.quote.slice(0, 8) ?? '\u0000'), railTip && railTip.textContent)
+
+    // clicking a far bar jumps without ever opening the panel
     scroller.scrollTop = 0
     await tick(40)
-    const farMark = t.store.marksOf('s1').find((entry) => entry.quote === 'if (n == 1) return a[0];')
+    const farBar = bars.find((bar) => bar.dataset.dcmBar === farMark.id)
+    check('rail: the far mark has a bar', farBar !== undefined)
+    farBar?.click()
+    await tick(700)
+    check('rail: clicking a bar jumps to the mark', scroller.scrollTop > 0, scroller.scrollTop)
+    check('rail: tooltip closes after the jump', railTip !== null && railTip.style.display === 'none', railTip && railTip.style.display)
+
+    // a Session with no marks gets no rail at all
+    const originalMounted = fakeCtx.sidebarRight.mounted.getSnapshot
+    fakeCtx.sidebarRight.mounted.getSnapshot = () => 's2'
+    t.rail().refresh(true)
+    check('rail: hidden for a Session without marks', rail.style.display === 'none', rail.style.display)
+    fakeCtx.sidebarRight.mounted.getSnapshot = originalMounted
+    t.rail().refresh(true)
+    check('rail: comes back for a Session that has marks', rail.style.display === 'flex' && rail.querySelectorAll('.dcm-rail-bar').length === sessionMarks.length, rail.style.display)
+
+    // hovering links the bar to the transcript through the hover highlight
+    bars[0]?.dispatchEvent(new Event('pointerenter'))
+    check('rail: hover highlights that mark in the transcript', window.CSS && CSS.highlights.has('dsh-cm-hover'))
+    t.refreshHighlights('s1', null)
+
+    // placement follows the column, and a pure placement change keeps the bars
+    const scrollerEl = document.getElementById('scroller')
+    const rightBefore = rail.style.right
+    const firstBar = rail.querySelector('.dcm-rail-bar')
+    scrollerEl.style.marginRight = '60px'
+    t.rail().refresh()
+    check('rail: placement follows the column edge', parseFloat(rail.style.right) > parseFloat(rightBefore), `${rightBefore} -> ${rail.style.right}`)
+    check('rail: a placement change does not rebuild the bars', rail.querySelector('.dcm-rail-bar') === firstBar)
+    scrollerEl.style.marginRight = ''
+    t.rail().refresh()
+
+    // ---- 9. jump to a mark that is far below the fold
+    scroller.scrollTop = 0
+    await tick(40)
     check('jump: the far mark exists', farMark !== undefined)
     const jumpResult = await t.jumpToMark(farMark, 's1')
     check('jump: reported success', jumpResult.ok === true, jumpResult)

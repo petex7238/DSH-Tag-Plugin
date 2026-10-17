@@ -15,6 +15,8 @@ window.__ModuleLoader__.load({
     const PANEL_ATTR = 'data-dsh-cm-panel'
     const TOOLBAR_ATTR = 'data-dsh-cm-toolbar'
     const FLASH_ATTR = 'data-dsh-cm-flash'
+    const RAIL_ATTR = 'data-dsh-cm-rail'
+    const TIP_ATTR = 'data-dsh-cm-tip'
     const OWN_ATTR = 'data-dsh-cm'
     const LS_TAGS = 'dsh.code-marks.v1.tags'
     const LS_MARKS = 'dsh.code.marks.v2.' // + sessionId
@@ -251,6 +253,8 @@ window.__ModuleLoader__.load({
      * selection toolbar, the paging request, tab opening).
      */
     let ctxRef = null
+    /** The live edge rail, so store and Session changes can reposition it. */
+    let railRef = null
     //#endregion
 
     //#region chat rows and text geometry
@@ -917,6 +921,249 @@ window.__ModuleLoader__.load({
     }
     //#endregion
 
+    //#region edge rail
+    /**
+     * A short deep-blue bar per mark, hugging the upper right edge of the
+     * conversation — the same visual language as the shell's own turn ticks
+     * (20x2 rounded bar, 10px pitch, right-aligned), so jumping to a mark needs
+     * neither the right column nor the transcript's scroll position.
+     */
+    const RAIL_PITCH = 10
+
+    /** Marks read top-down like a table of contents: turn, then offset in it. */
+    function compareMarks(a, b) {
+      const turnA = Number.isSafeInteger(a.turn) ? a.turn : Number.MAX_SAFE_INTEGER
+      const turnB = Number.isSafeInteger(b.turn) ? b.turn : Number.MAX_SAFE_INTEGER
+      if (turnA !== turnB) return turnA - turnB
+      const startA = Number.isSafeInteger(a.start) ? a.start : 0
+      const startB = Number.isSafeInteger(b.start) ? b.start : 0
+      if (startA !== startB) return startA - startB
+      return a.createdAt - b.createdAt
+    }
+
+    /** Whether the shell is showing a dark surface, by sampling its own background. */
+    function isDarkSurface() {
+      try {
+        const sample = getComputedStyle(document.body).backgroundColor
+        const match = /rgba?\(([^)]+)\)/.exec(sample)
+        if (match === null) return false
+        const parts = match[1].split(',').map((part) => Number.parseFloat(part))
+        const [r, g, b] = parts
+        if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) return false
+        // A transparent surface carries no opinion: treat it as light.
+        if (parts.length >= 4 && parts[3] === 0) return false
+        return (r * 299 + g * 587 + b * 114) / 1000 < 128
+      } catch {
+        return false
+      }
+    }
+
+    /** Where the rail belongs: the upper right edge of the conversation column. */
+    function railGeometry() {
+      const scroller = document.querySelector('[data-conversation-scroll]')
+      if (scroller === null) return null
+      const rect = scroller.getBoundingClientRect()
+      if (rect.width < 240 || rect.height < 200) return null
+      const right = Math.max(4, window.innerWidth - rect.right + 4)
+      const top = Math.max(72, rect.top + 76)
+      // Keep the rail in the column's upper part so it never grows into the
+      // shell's own turn ticks (which sit vertically centred); overflow scrolls.
+      const cap = Math.max(RAIL_PITCH * 3, Math.floor(rect.height * 0.42))
+      const room = Math.min(window.innerHeight - top - 96, cap)
+      if (room < RAIL_PITCH * 3) return null
+      return { right, top, room }
+    }
+
+    function createMarkRail(ctx) {
+      ensureStyles()
+      const rail = document.createElement('div')
+      rail.setAttribute(RAIL_ATTR, '')
+      rail.setAttribute(OWN_ATTR, '')
+      rail.setAttribute('role', 'navigation')
+      rail.setAttribute('aria-label', '标记')
+      document.body.appendChild(rail)
+
+      const tip = document.createElement('div')
+      tip.setAttribute(TIP_ATTR, '')
+      tip.setAttribute(OWN_ATTR, '')
+      tip.setAttribute('role', 'tooltip')
+      document.body.appendChild(tip)
+
+      let hideTimer = 0
+      let visibleMarks = []
+      let session = undefined
+      let signature = ''
+
+      const sessionOf = () => {
+        try {
+          return ctx.sidebarRight?.mounted?.getSnapshot?.()
+        } catch {
+          return undefined
+        }
+      }
+
+      function hideTip() {
+        window.clearTimeout(hideTimer)
+        tip.style.display = 'none'
+        if (session !== undefined) refreshHighlights(session, null)
+      }
+
+      function scheduleHideTip() {
+        window.clearTimeout(hideTimer)
+        hideTimer = window.setTimeout(hideTip, 140)
+      }
+
+      function showTip(mark, button) {
+        window.clearTimeout(hideTimer)
+        const tag = store.getSnapshot().tags.find((entry) => entry.id === mark.tagId)
+        const palette = paletteOf(tag?.color)
+        tip.textContent = ''
+
+        const head = document.createElement('div')
+        head.className = 'dcm-tip-tag'
+        const dot = document.createElement('i')
+        dot.style.background = palette.dot
+        head.appendChild(dot)
+        head.appendChild(document.createTextNode(tag?.name ?? '未分类'))
+        tip.appendChild(head)
+
+        const quote = document.createElement('div')
+        quote.className = `dcm-tip-quote${isCodeQuote(mark.quote) ? ' dcm-tip-quote-code' : ''}`
+        quote.textContent = clampText(mark.quote, 220)
+        tip.appendChild(quote)
+
+        const meta = document.createElement('div')
+        meta.className = 'dcm-tip-meta'
+        const bits = []
+        if (mark.turn !== null) bits.push(`第 ${mark.turn} 轮`)
+        bits.push(formatWhen(mark.createdAt))
+        meta.textContent = bits.join(' · ')
+        tip.appendChild(meta)
+
+        tip.style.display = 'block'
+        tip.style.visibility = 'hidden'
+        const bar = button.getBoundingClientRect()
+        const own = tip.getBoundingClientRect()
+        const left = Math.max(8, bar.left - own.width - 10)
+        const top = Math.max(8, Math.min(bar.top + bar.height / 2 - own.height / 2, window.innerHeight - own.height - 8))
+        tip.style.left = `${Math.round(left)}px`
+        tip.style.top = `${Math.round(top)}px`
+        tip.style.visibility = 'visible'
+        if (session !== undefined) refreshHighlights(session, mark.id)
+      }
+
+      /** A notice borrows the tooltip so a failed jump is never silent. */
+      function noticeAt(button, text) {
+        tip.textContent = ''
+        const line = document.createElement('div')
+        line.className = 'dcm-tip-notice'
+        line.textContent = text
+        tip.appendChild(line)
+        tip.style.display = 'block'
+        const bar = button.getBoundingClientRect()
+        const own = tip.getBoundingClientRect()
+        tip.style.left = `${Math.round(Math.max(8, bar.left - own.width - 10))}px`
+        tip.style.top = `${Math.round(Math.max(8, Math.min(bar.top - own.height / 2, window.innerHeight - own.height - 8)))}px`
+        window.clearTimeout(hideTimer)
+        hideTimer = window.setTimeout(hideTip, 2600)
+      }
+
+      async function activate(mark, button) {
+        hideTip()
+        const result = await jumpToMark(mark, session)
+        if (!result.ok) noticeAt(button, '这段内容还没加载出来：先往上滚一点，再点一次。')
+        else if (!result.resolved) noticeAt(button, '已定位到这条消息，但原文已被改写，高亮对不上。')
+      }
+
+      function barFor(mark, index) {
+        const tag = store.getSnapshot().tags.find((entry) => entry.id === mark.tagId)
+        const button = document.createElement('button')
+        button.type = 'button'
+        button.className = 'dcm-rail-bar'
+        button.dataset.dcmBar = mark.id
+        button.dataset.dcmIndex = String(index)
+        button.setAttribute('aria-label', `${tag?.name ?? '未分类'}：${clampText(mark.quote, 48)}`)
+        button.addEventListener('pointerenter', () => showTip(mark, button))
+        button.addEventListener('pointerleave', () => scheduleHideTip())
+        button.addEventListener('focus', () => showTip(mark, button))
+        button.addEventListener('blur', () => scheduleHideTip())
+        button.addEventListener('click', () => {
+          void activate(mark, button)
+        })
+        return button
+      }
+
+      /**
+       * Rebuild the bars, but only when the visible set changed: a rebuild
+       * replaces the button under the pointer, so a no-op refresh during
+       * streaming must not steal the hover. Placement is re-applied every time,
+       * which is what makes the rail follow the column while the right pane
+       * animates open or closed.
+       */
+      function refresh(force) {
+        observeColumn()
+        const next = sessionOf()
+        if (next !== session) {
+          session = next
+          if (session !== undefined) store.ensureSession(session)
+        }
+        const geometry = railGeometry()
+        visibleMarks = session === undefined ? [] : [...store.marksOf(session)].sort(compareMarks)
+        const tone = isDarkSurface() ? 'dark' : 'light'
+        const shown = visibleMarks.length > 0 && geometry !== null
+        if (shown) {
+          rail.dataset.tone = tone
+          rail.style.display = 'flex'
+          rail.style.right = `${Math.round(geometry.right)}px`
+          rail.style.top = `${Math.round(geometry.top)}px`
+          rail.style.maxHeight = `${Math.min(geometry.room, visibleMarks.length * RAIL_PITCH + 4)}px`
+        } else {
+          rail.style.display = 'none'
+        }
+        const structure = `${session ?? '-'}|${tone}|${shown}|${visibleMarks.map((mark) => `${mark.id}:${mark.tagId}`).join(',')}`
+        if (!force && structure === signature) return
+        signature = structure
+        hideTip()
+        rail.textContent = ''
+        if (!shown) return
+        for (const [index, mark] of visibleMarks.entries()) rail.appendChild(barFor(mark, index))
+      }
+
+      /** Follow the conversation column itself, not just window resizes. */
+      let observedColumn = null
+      let columnObserver = null
+      function observeColumn() {
+        if (typeof ResizeObserver !== 'function') return
+        const scroller = document.querySelector('[data-conversation-scroll]')
+        if (scroller === observedColumn) return
+        if (columnObserver === null) columnObserver = new ResizeObserver(() => refresh())
+        if (observedColumn !== null) columnObserver.unobserve(observedColumn)
+        observedColumn = scroller
+        if (scroller !== null) columnObserver.observe(scroller)
+      }
+
+      const onResize = () => refresh()
+      window.addEventListener('resize', onResize)
+      document.addEventListener('scroll', scheduleHideTip, true)
+
+      refresh()
+
+      return {
+        refresh,
+        dispose() {
+          window.removeEventListener('resize', onResize)
+          document.removeEventListener('scroll', scheduleHideTip, true)
+          columnObserver?.disconnect()
+          columnObserver = null
+          observedColumn = null
+          window.clearTimeout(hideTimer)
+          rail.remove()
+          tip.remove()
+        },
+      }
+    }
+    //#endregion
+
     //#region open the panel
     /**
      * Reveal the marks tab for the on-screen Session. `openTab` also expands the
@@ -1358,6 +1605,23 @@ window.__ModuleLoader__.load({
 .dcm-toolbar-add{width:24px;height:24px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;font-size:13px;}
 .dcm-toolbar-add:hover{background:var(--dsw-alias-bg-layer-1,rgba(0,0,0,.06));}
 .dcm-toolbar-input{width:110px;height:24px;padding:0 7px;border-radius:7px;border:1px solid var(--dsw-alias-brand-primary,#3b82f6);background:transparent;color:inherit;font-size:12px;outline:none;}
+/* Edge rail: one 18x2 deep-blue bar per mark, 10px pitch, right-aligned — the
+   same shape as the shell's turn ticks, so it reads as part of the transcript. */
+[${RAIL_ATTR}]{position:fixed;z-index:2147482980;display:flex;flex-direction:column;align-items:flex-end;width:28px;padding:2px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;}
+[${RAIL_ATTR}]::-webkit-scrollbar{display:none}
+.dcm-rail-bar{position:relative;flex:0 0 auto;width:100%;height:10px;padding:0;margin:0;border:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:flex-end;}
+.dcm-rail-bar::after{content:"";display:block;width:18px;height:2px;border-radius:2px;background:#1e3a8a;opacity:.9;transform-origin:100% 50%;transition:width .14s,opacity .14s,background-color .14s;}
+[${RAIL_ATTR}][data-tone="dark"] .dcm-rail-bar::after{background:#7aa2ff;opacity:.85;}
+.dcm-rail-bar:hover::after,.dcm-rail-bar:focus-visible::after{width:25px;opacity:1;background:#1d4ed8;}
+[${RAIL_ATTR}][data-tone="dark"] .dcm-rail-bar:hover::after{background:#a9c8ff;}
+.dcm-rail-bar:focus-visible{outline:2px solid #2563eb;outline-offset:2px;border-radius:5px;}
+[${TIP_ATTR}]{position:fixed;z-index:2147483003;display:none;max-width:320px;padding:7px 9px;border-radius:9px;background:var(--dsw-alias-bg-overlay,#fff);border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));box-shadow:0 10px 26px rgba(0,0,0,.18);font-size:12px;line-height:1.45;color:var(--dsw-alias-label-primary,#1f2328);pointer-events:none;}
+.dcm-tip-tag{display:flex;align-items:center;gap:5px;font-weight:600;font-size:11px;margin-bottom:3px;}
+.dcm-tip-tag i{width:7px;height:7px;border-radius:50%;flex:0 0 auto;}
+.dcm-tip-quote{white-space:pre-wrap;word-break:break-word;color:var(--dsw-alias-label-secondary,#4b5563);font-size:11.5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.dcm-tip-quote-code{font-family:ui-monospace,SFMono-Regular,"Cascadia Code",Consolas,monospace;font-size:11px;color:var(--dsw-alias-label-primary,#1f2328);}
+.dcm-tip-meta{margin-top:4px;font-size:10px;color:var(--dsw-alias-label-tertiary,#9ca3af);}
+.dcm-tip-notice{font-size:11.5px;line-height:1.5;}
 ${CSS_HIGHLIGHT_BASE}
 @keyframes dsh-cm-flash{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.02)}}
 `
@@ -1446,6 +1710,12 @@ ${CSS_HIGHLIGHT_BASE}
         const detachToolbar = createSelectionToolbar(ctx)
         disposers.push(() => detachToolbar())
 
+        // 4b. The deep-blue bar rail on the conversation's upper right edge: jump
+        //     to a mark without opening the right column.
+        const rail = createMarkRail(ctx)
+        railRef = rail
+        disposers.push(() => rail.dispose())
+
         // 5. Keep highlights correct as the transcript streams, scrolls and re-renders.
         let timer = 0
         let currentSession = undefined
@@ -1453,6 +1723,7 @@ ${CSS_HIGHLIGHT_BASE}
           const sessionId = ctx.sidebarRight?.mounted?.getSnapshot?.()
           if (sessionId !== currentSession) currentSession = sessionId
           if (sessionId) refreshHighlights(sessionId, null)
+          railRef?.refresh()
         }
         const observer = new MutationObserver(() => {
           window.clearTimeout(timer)
@@ -1533,6 +1804,8 @@ ${CSS_HIGHLIGHT_BASE}
         rowText,
         jumpToMark,
         refreshHighlights,
+        createMarkRail,
+        rail: () => railRef,
         store,
       },
     }
