@@ -492,7 +492,8 @@
     const rowBoxBefore = tallRow.getBoundingClientRect()
     check('centre: the fixture row really is taller than the column', rowBoxBefore.height > columnBoxBefore.height, { row: Math.round(rowBoxBefore.height), column: Math.round(columnBoxBefore.height) })
     const deepResult = await t.jumpToMark(deepMark, 's1')
-    await tick(180)
+    // No extra settle time on purpose: the jump must already be final when the
+    // promise resolves, i.e. it lands instantly instead of animating.
     check('centre: the tall jump reported success', deepResult.ok === true && deepResult.resolved === true, deepResult)
     const deepRange = t.resolveMark(deepMark).range
     const deepRects = [...(deepRange?.getClientRects() ?? [])].filter((rect) => rect.width > 0 && rect.height > 0)
@@ -500,6 +501,7 @@
     const columnBox = scroller.getBoundingClientRect()
     const centreOffset = deepBox === null ? null : (deepBox.top + deepBox.bottom) / 2 - (columnBox.top + columnBox.height / 2)
     check('centre: the marked text lands on the column centre line', centreOffset !== null && Math.abs(centreOffset) < 60, centreOffset === null ? null : centreOffset.toFixed(1))
+    check('centre: the jump is instant, not animated', deepBox !== null && Math.abs(centreOffset) < 60, { offset: centreOffset === null ? null : Number(centreOffset.toFixed(1)) })
     const rowAfterJump = tallRow.getBoundingClientRect()
     check('centre: the row itself is NOT what got centred', Math.abs((rowAfterJump.top + rowAfterJump.bottom) / 2 - (columnBox.top + columnBox.height / 2)) > 60, Math.round((rowAfterJump.top + rowAfterJump.bottom) / 2 - (columnBox.top + columnBox.height / 2)))
 

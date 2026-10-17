@@ -684,14 +684,6 @@ window.__ModuleLoader__.load({
       return true
     }
 
-    function prefersReducedMotion() {
-      try {
-        return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-      } catch {
-        return false
-      }
-    }
-
     /** The box a Range occupies, spanning every line of a multi-line selection. */
     function rangeBox(range) {
       if (range === null) return null
@@ -719,27 +711,43 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Jump one column to an absolute offset. Always instant: an animated scroll
+     * races the shell's own scroll anchoring and the landing flash, so the jump
+     * simply arrives. `behavior: 'instant'` is used rather than 'auto' because
+     * 'auto' still honours a `scroll-behavior: smooth` rule on the container.
+     */
+    function jumpColumn(scroller, top) {
+      try {
+        scroller.scrollTo({ top, behavior: 'instant' })
+      } catch {
+        scroller.scrollTop = top
+      }
+    }
+
+    /**
      * Centre the marked span — not its message row — in the readable band, then
      * measure again and correct. A long answer can be thousands of pixels tall,
      * so centring the row leaves the marked line off screen; that was the bug.
      * The second pass is what survives the shell's own scroll anchoring.
      */
     async function centerInColumn(scroller, readRange, row) {
-      const behavior = prefersReducedMotion() ? 'auto' : 'smooth'
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const range = readRange()
-        const box = rangeBox(range) ?? {
-          top: row.getBoundingClientRect().top,
-          height: row.getBoundingClientRect().height,
-        }
+        const box =
+          rangeBox(range) ??
+          (() => {
+            const rowRect = row.getBoundingClientRect()
+            return { top: rowRect.top, height: rowRect.height }
+          })()
         const band = visibleBand(scroller)
         const delta = box.top + box.height / 2 - (band.top + band.height / 2)
         if (attempt > 0 && Math.abs(delta) <= 2) return
         const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
         const target = Math.max(0, Math.min(maxTop, scroller.scrollTop + delta))
         if (Math.abs(target - scroller.scrollTop) < 2) return
-        scroller.scrollTo({ top: target, behavior: attempt === 0 ? behavior : 'auto' })
-        await wait(attempt === 0 && behavior === 'smooth' ? 340 : 140)
+        jumpColumn(scroller, target)
+        // One frame of slack for the shell's anchoring, then re-measure.
+        await wait(attempt === 0 ? 48 : 32)
       }
       // Last resort: let the browser scroll every scrollable ancestor of the text,
       // which also covers the fold-out process body's own inner scroller.
@@ -747,7 +755,7 @@ window.__ModuleLoader__.load({
       const node = range?.startContainer ?? row
       const element = node !== null && node !== undefined ? (node.nodeType === 1 ? node : node.parentElement) : null
       if (element !== null && typeof element.scrollIntoView === 'function') {
-        element.scrollIntoView({ block: 'center', behavior: 'auto' })
+        element.scrollIntoView({ block: 'center', behavior: 'instant' })
       }
     }
 
@@ -775,11 +783,11 @@ window.__ModuleLoader__.load({
       const readRange = () => resolveMark(mark).range
       if (scroller === null) {
         try {
-          resolved.row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+          resolved.row.scrollIntoView({ block: 'center', behavior: 'instant' })
         } catch {
           resolved.row.scrollIntoView()
         }
-        await wait(160)
+        await wait(40)
       } else {
         await centerInColumn(scroller, readRange, resolved.row)
       }
