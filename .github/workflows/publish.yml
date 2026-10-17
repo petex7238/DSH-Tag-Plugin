@@ -5,10 +5,16 @@ name: publish
 #
 # One-time setup:
 #   1. https://www.npmjs.com/settings/<you>/tokens → Generate New Token →
-#      type **Automation** (no OTP prompt) → Read and write.
+#      **Granular Access Token** with Read and write (npm now requires this for
+#      direct publishing; classic tokens and web-login sessions are refused).
 #   2. This repository → Settings → Secrets and variables → Actions →
 #      New repository secret → name `NPM_TOKEN`, value the token.
 #   3. Either publish a GitHub Release, or run this workflow manually.
+#
+# Note: the secret is checked inside `run:` on purpose — the `secrets` context
+# is not available in a step's `if:`, and using it there makes the whole
+# workflow invalid (GitHub then shows the file path instead of the name and
+# creates a zero-job failed run on every push).
 on:
   release:
     types: [published]
@@ -28,12 +34,13 @@ jobs:
           registry-url: https://registry.npmjs.org
 
       - name: Require the NPM_TOKEN secret
-        if: ${{ secrets.NPM_TOKEN == '' }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          echo "::error::Missing the NPM_TOKEN secret. Create an Automation token at"
-          echo "https://www.npmjs.com/settings/~your-user~/tokens and add it under"
-          echo "Settings -> Secrets and variables -> Actions."
-          exit 1
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::error::Missing the NPM_TOKEN secret. Create a Granular Access Token (Read and write) at https://www.npmjs.com/settings/~your-user~/tokens and add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
 
       - name: Show what will be published
         run: npm pack --dry-run
