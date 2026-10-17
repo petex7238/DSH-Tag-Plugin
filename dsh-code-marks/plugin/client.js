@@ -684,9 +684,76 @@ window.__ModuleLoader__.load({
       return true
     }
 
+    function prefersReducedMotion() {
+      try {
+        return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+      } catch {
+        return false
+      }
+    }
+
+    /** The box a Range occupies, spanning every line of a multi-line selection. */
+    function rangeBox(range) {
+      if (range === null) return null
+      let top = Infinity
+      let bottom = -Infinity
+      for (const rect of range.getClientRects()) {
+        if (rect.width <= 0 || rect.height <= 0) continue
+        top = Math.min(top, rect.top)
+        bottom = Math.max(bottom, rect.bottom)
+      }
+      return top === Infinity ? null : { top, height: bottom - top }
+    }
+
     /**
-     * Bring one mark into view: page history in when needed, scroll the row into
-     * the viewport, and flash the exact marked span.
+     * The readable band of the transcript: the column minus whatever the composer
+     * occupies at its foot. Centring inside this band is what makes a jump land
+     * in the middle of what the user can actually see.
+     */
+    function visibleBand(scroller) {
+      const rect = scroller.getBoundingClientRect()
+      const seat = scroller.querySelector('[data-composer-seat]')
+      const seatRect = seat === null ? null : seat.getBoundingClientRect()
+      const bottom = seatRect !== null && seatRect.top > rect.top + 40 ? Math.min(rect.bottom, seatRect.top) : rect.bottom
+      return { top: rect.top, height: Math.max(120, bottom - rect.top) }
+    }
+
+    /**
+     * Centre the marked span — not its message row — in the readable band, then
+     * measure again and correct. A long answer can be thousands of pixels tall,
+     * so centring the row leaves the marked line off screen; that was the bug.
+     * The second pass is what survives the shell's own scroll anchoring.
+     */
+    async function centerInColumn(scroller, readRange, row) {
+      const behavior = prefersReducedMotion() ? 'auto' : 'smooth'
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const range = readRange()
+        const box = rangeBox(range) ?? {
+          top: row.getBoundingClientRect().top,
+          height: row.getBoundingClientRect().height,
+        }
+        const band = visibleBand(scroller)
+        const delta = box.top + box.height / 2 - (band.top + band.height / 2)
+        if (attempt > 0 && Math.abs(delta) <= 2) return
+        const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight)
+        const target = Math.max(0, Math.min(maxTop, scroller.scrollTop + delta))
+        if (Math.abs(target - scroller.scrollTop) < 2) return
+        scroller.scrollTo({ top: target, behavior: attempt === 0 ? behavior : 'auto' })
+        await wait(attempt === 0 && behavior === 'smooth' ? 340 : 140)
+      }
+      // Last resort: let the browser scroll every scrollable ancestor of the text,
+      // which also covers the fold-out process body's own inner scroller.
+      const range = readRange()
+      const node = range?.startContainer ?? row
+      const element = node !== null && node !== undefined ? (node.nodeType === 1 ? node : node.parentElement) : null
+      if (element !== null && typeof element.scrollIntoView === 'function') {
+        element.scrollIntoView({ block: 'center', behavior: 'auto' })
+      }
+    }
+
+    /**
+     * Bring one mark into view: page history in when needed, centre the marked
+     * span in the column, then flash it.
      */
     async function jumpToMark(mark, sessionId) {
       let resolved = resolveMark(mark)
@@ -704,12 +771,18 @@ window.__ModuleLoader__.load({
         resolved = resolveMark(mark)
       }
       if (resolved.row === null) return { ok: false, reason: 'missing' }
-      try {
-        resolved.row.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      } catch {
-        resolved.row.scrollIntoView()
+      const scroller = resolved.row.closest('[data-conversation-scroll]')
+      const readRange = () => resolveMark(mark).range
+      if (scroller === null) {
+        try {
+          resolved.row.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        } catch {
+          resolved.row.scrollIntoView()
+        }
+        await wait(160)
+      } else {
+        await centerInColumn(scroller, readRange, resolved.row)
       }
-      await wait(160)
       const refreshed = resolveMark(mark)
       flashRange(refreshed.range)
       if (refreshed.range !== null && typeof window.getSelection === 'function') {
