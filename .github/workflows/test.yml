@@ -19,7 +19,13 @@ jobs:
       - name: Install the browser driver
         run: npm install --no-audit --no-fund
 
+      # The product UI (and the harness fixtures) are CJK. Without a CJK font
+      # the runner renders tofu with different metrics, which is a needless
+      # source of geometry differences from a real machine.
+      - name: Install CJK fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-cjk
+
       # GitHub's ubuntu images ship Google Chrome at /usr/bin/google-chrome,
-      # which the harness picks up on its own.
+      # which the harness picks up on its own. Set CHROME_PATH to override.
       - name: Run the harness
         run: npm test
