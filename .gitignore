@@ -9,9 +9,3 @@ tmp/
 # Never commit installed dependencies or logs.
 node_modules/
 *.log
-
-# Temporary bridge: the running DSH host caches a plugin's resolved package path
-# until it restarts, and this repository used to live in dsh-code-marks/. This
-# mirror keeps that cached path resolvable so the plugin keeps working in the
-# current session. Safe to delete after the next DSH restart.
-dsh-code-marks/
