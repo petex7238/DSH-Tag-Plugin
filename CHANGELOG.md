@@ -11,8 +11,12 @@ First public release.
   tag from the floating bar, and it is stored outside the transcript.
 - **Edge rail**: one deep-blue bar per mark on the upper right edge of the
   conversation, shaped like the shell's own turn ticks. Hover shows tag, quote
-  and turn; click jumps; right-click opens a two-item menu (jump / delete);
+  and turn; click jumps; right-click opens a menu (jump / rename / delete);
   delete keeps a 5-second undo.
+- **Per-mark names**: rename a mark from the rail's context menu (inline field,
+  Enter saves, Esc cancels, empty falls back to the quote). A name belongs to
+  that one mark — the tag stays shared — and wins over the tag in the tooltip,
+  the sidebar list and the bar's accessible label.
 - **Right-sidebar tab**「标记」: filter by tag, search, per-mark notes, tag
   management (create / rename / recolor / delete).
 - **Precise jumping**: four-level anchor fallback (anchor key → node key →

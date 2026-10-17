@@ -401,6 +401,38 @@
     check('menu: an outside click closes it', document.querySelector('[data-dsh-cm-menu]') === null)
     check('menu: an outside click deletes nothing', t.store.marksOf('s1').length === beforeDelete)
 
+    // renaming: the menu offers it, an inline field saves on Enter, Esc cancels
+    rightClick()
+    await tick(60)
+    const renameItem = [...(document.querySelector('[data-dsh-cm-menu]')?.querySelectorAll('.dcm-menu-item') ?? [])].find((entry) => entry.textContent.includes('重命名'))
+    check('menu: it offers a rename item', renameItem !== undefined)
+    renameItem?.click()
+    await tick(60)
+    const nameInput = document.querySelector('[data-dsh-cm-menu] .dcm-menu-input')
+    check('menu: rename opens an inline field with the current name', nameInput !== null, nameInput && nameInput.value)
+    nameInput.value = '边界条件'
+    nameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await tick(80)
+    const renamed = t.store.marksOf('s1').find((entry) => entry.id === farMark.id)
+    check('menu: Enter stores the new name', renamed?.name === '边界条件', renamed && renamed.name)
+    check('menu: the rename editor closes', document.querySelector('[data-dsh-cm-menu]') === null)
+    const renamedBar = [...rail.querySelectorAll('.dcm-rail-bar')].find((bar) => bar.dataset.dcmBar === farMark.id)
+    check('menu: the bar aria-label carries the name', renamedBar !== undefined && (renamedBar.getAttribute('aria-label') ?? '').startsWith('边界条件'), renamedBar && renamedBar.getAttribute('aria-label'))
+    renamedBar?.dispatchEvent(new Event('pointerenter'))
+    const namedTip = document.querySelector('[data-dsh-cm-tip]')
+    check('menu: the tooltip shows the name instead of the tag', namedTip !== null && namedTip.textContent.startsWith('边界条件'), namedTip && namedTip.textContent)
+    // Esc must leave the stored name alone
+    rightClick()
+    await tick(60)
+    ;[...document.querySelectorAll('[data-dsh-cm-menu] .dcm-menu-item')].find((entry) => entry.textContent.includes('重命名'))?.click()
+    await tick(60)
+    const escInput = document.querySelector('[data-dsh-cm-menu] .dcm-menu-input')
+    escInput.value = '不该保存'
+    escInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await tick(60)
+    check('menu: Escape cancels the rename', t.store.marksOf('s1').find((entry) => entry.id === farMark.id)?.name === '边界条件', t.store.marksOf('s1').find((entry) => entry.id === farMark.id)?.name)
+    check('menu: Escape closes the rename editor', document.querySelector('[data-dsh-cm-menu]') === null)
+
     // choosing delete is the only way to actually delete from the rail
     rightClick()
     await tick(60)

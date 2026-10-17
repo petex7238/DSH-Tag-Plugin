@@ -151,6 +151,7 @@ window.__ModuleLoader__.load({
             suffix: typeof item.suffix === 'string' ? item.suffix.slice(0, CONTEXT * 2) : '',
             start: Number.isSafeInteger(item.start) ? item.start : null,
             note: typeof item.note === 'string' ? item.note.slice(0, 400) : '',
+            name: typeof item.name === 'string' ? item.name.slice(0, 40) : '',
             createdAt: Number.isSafeInteger(item.createdAt) ? item.createdAt : Date.now(),
           })
         }
@@ -899,6 +900,7 @@ window.__ModuleLoader__.load({
           id: uid('m'),
           tagId: tag.id,
           ...pending,
+          name: '',
           note: '',
           createdAt: Date.now(),
         }
@@ -1154,6 +1156,7 @@ window.__ModuleLoader__.load({
         window.clearTimeout(hideTimer)
         const tag = store.getSnapshot().tags.find((entry) => entry.id === mark.tagId)
         const palette = paletteOf(tag?.color)
+        const named = typeof mark.name === 'string' ? mark.name.trim() : ''
         tip.textContent = ''
 
         const head = document.createElement('div')
@@ -1161,7 +1164,14 @@ window.__ModuleLoader__.load({
         const dot = document.createElement('i')
         dot.style.background = palette.dot
         head.appendChild(dot)
-        head.appendChild(document.createTextNode(tag?.name ?? '未分类'))
+        // A mark's own name wins over its tag: the tag is shared, the name is this one.
+        head.appendChild(document.createTextNode(named !== '' ? named : (tag?.name ?? '未分类')))
+        if (named !== '') {
+          const chip = document.createElement('span')
+          chip.className = 'dcm-tip-tagchip'
+          chip.textContent = tag?.name ?? '未分类'
+          head.appendChild(chip)
+        }
         tip.appendChild(head)
 
         const quote = document.createElement('div')
@@ -1237,7 +1247,7 @@ window.__ModuleLoader__.load({
         element.setAttribute('role', 'menu')
         element.tabIndex = -1
 
-        const item = (label, className, run) => {
+        const item = (label, className, run, keepOpen) => {
           const entry = document.createElement('button')
           entry.type = 'button'
           entry.className = `dcm-menu-item${className === undefined ? '' : ` ${className}`}`
@@ -1246,6 +1256,10 @@ window.__ModuleLoader__.load({
           entry.addEventListener('click', (clickEvent) => {
             clickEvent.preventDefault()
             clickEvent.stopPropagation()
+            if (keepOpen === true) {
+              run()
+              return
+            }
             closeMenu()
             run()
           })
@@ -1253,7 +1267,53 @@ window.__ModuleLoader__.load({
           return entry
         }
 
+        /** Swap the menu for a one-field editor; the menu owns the guard rails. */
+        const startRename = () => {
+          element.textContent = ''
+          const row = document.createElement('div')
+          row.className = 'dcm-menu-edit'
+          const input = document.createElement('input')
+          input.className = 'dcm-menu-input'
+          input.type = 'text'
+          input.value = typeof mark.name === 'string' ? mark.name : ''
+          input.placeholder = '名字（留空则显示原文）'
+          input.maxLength = 40
+          const save = document.createElement('button')
+          save.type = 'button'
+          save.className = 'dcm-menu-save'
+          save.textContent = '保存'
+          row.appendChild(input)
+          row.appendChild(save)
+          element.appendChild(row)
+
+          const commit = () => {
+            const name = input.value.trim().slice(0, 40)
+            const sessionId = session
+            closeMenu()
+            if (sessionId === undefined) return
+            store.patchMark(sessionId, mark.id, { name })
+            railRef?.refresh(true)
+          }
+          save.addEventListener('click', (clickEvent) => {
+            clickEvent.preventDefault()
+            clickEvent.stopPropagation()
+            commit()
+          })
+          input.addEventListener('keydown', (keyEvent) => {
+            if (keyEvent.key === 'Enter') {
+              keyEvent.preventDefault()
+              commit()
+            } else if (keyEvent.key === 'Escape') {
+              keyEvent.preventDefault()
+              closeMenu()
+            }
+          })
+          input.focus()
+          input.select()
+        }
+
         item('跳转到这条标记', undefined, () => void activate(mark, button))
+        item('重命名名称', undefined, startRename, true)
         item('删除这条标记', 'dcm-menu-danger', () => removeMark(mark, button))
 
         document.body.appendChild(element)
@@ -1324,7 +1384,7 @@ window.__ModuleLoader__.load({
         button.className = 'dcm-rail-bar'
         button.dataset.dcmBar = mark.id
         button.dataset.dcmIndex = String(index)
-        button.setAttribute('aria-label', `${tag?.name ?? '未分类'}：${clampText(mark.quote, 48)}（右键菜单）`)
+        button.setAttribute('aria-label', `${(typeof mark.name === 'string' && mark.name.trim() !== '' ? mark.name.trim() : tag?.name) ?? '未分类'}：${clampText(mark.quote, 48)}（右键菜单）`)
         button.addEventListener('pointerenter', () => showTip(mark, button))
         button.addEventListener('pointerleave', () => scheduleHideTip())
         button.addEventListener('focus', () => showTip(mark, button))
@@ -1602,6 +1662,9 @@ window.__ModuleLoader__.load({
                       React.createElement('i', { style: { background: palette.dot } }),
                       tag?.name ?? '未分类',
                     ),
+                    typeof mark.name === 'string' && mark.name.trim() !== ''
+                      ? React.createElement('span', { className: 'dcm-name' }, mark.name.trim())
+                      : null,
                     React.createElement('span', { className: 'dcm-meta' }, mark.turn === null ? '' : `第 ${mark.turn} 轮`),
                     React.createElement('span', { className: 'dcm-meta' }, formatWhen(mark.createdAt)),
                     React.createElement(
@@ -1812,6 +1875,7 @@ window.__ModuleLoader__.load({
 .dcm-item-top{display:flex;align-items:center;gap:7px;margin-bottom:4px;}
 .dcm-tag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--dsw-alias-label-primary,#1f2328);}
 .dcm-meta{font-size:10px;color:var(--dsw-alias-label-secondary,#9ca3af);}
+.dcm-name{font-size:11px;font-weight:600;color:var(--dsw-alias-label-primary,#1f2328);max-width:9em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .dcm-item-actions{margin-left:auto;display:none;gap:2px;}
 .dcm-item:hover .dcm-item-actions{display:inline-flex;}
 .dcm-mini{width:20px;height:20px;border-radius:6px;border:0;background:transparent;color:var(--dsw-alias-label-secondary,#6b7280);cursor:pointer;font-size:12px;line-height:1;}
@@ -1858,6 +1922,7 @@ window.__ModuleLoader__.load({
 [${TIP_ATTR}]{position:fixed;z-index:2147483003;display:none;max-width:320px;padding:7px 9px;border-radius:9px;background:var(--dcm-pop-bg);border:1px solid var(--dcm-pop-line);box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px;line-height:1.45;color:var(--dcm-pop-fg);pointer-events:none;}
 .dcm-tip-tag{display:flex;align-items:center;gap:5px;font-weight:600;font-size:11px;margin-bottom:3px;color:var(--dcm-pop-fg);}
 .dcm-tip-tag i{width:7px;height:7px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
+.dcm-tip-tagchip{margin-left:2px;font-weight:400;font-size:10px;color:var(--dcm-pop-fg-faint);border:1px solid var(--dcm-pop-line);border-radius:5px;padding:0 4px;line-height:14px;}
 .dcm-tip-quote{white-space:pre-wrap;word-break:break-word;color:var(--dcm-pop-fg-dim);font-size:11.5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
 .dcm-tip-quote-code{font-family:ui-monospace,SFMono-Regular,"Cascadia Code",Consolas,monospace;font-size:11px;color:var(--dcm-pop-fg);}
 .dcm-tip-meta{margin-top:4px;font-size:10px;color:var(--dcm-pop-fg-faint);}
@@ -1874,6 +1939,11 @@ window.__ModuleLoader__.load({
 .dcm-menu-item:hover,.dcm-menu-item:focus-visible{background:var(--dcm-pop-hover);outline:none;}
 .dcm-menu-danger{color:#ff9d9d;}
 .dcm-menu-danger:hover,.dcm-menu-danger:focus-visible{background:rgba(239,68,68,.18);color:#ffb4b4;}
+.dcm-menu-edit{display:flex;align-items:center;gap:5px;padding:2px;}
+.dcm-menu-input{flex:1 1 auto;width:150px;height:24px;padding:0 7px;border-radius:6px;border:1px solid #4d93f8;background:rgba(255,255,255,.07);color:var(--dcm-pop-fg);font:inherit;font-size:12px;outline:none;}
+.dcm-menu-input::placeholder{color:var(--dcm-pop-fg-faint);}
+.dcm-menu-save{height:24px;padding:0 9px;border-radius:6px;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.10);color:var(--dcm-pop-fg);font:inherit;font-size:11px;cursor:pointer;}
+.dcm-menu-save:hover{background:rgba(255,255,255,.20);}
 ${CSS_HIGHLIGHT_BASE}
 @keyframes dsh-cm-flash{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.02)}}
 `
