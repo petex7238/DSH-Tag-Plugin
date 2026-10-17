@@ -15,32 +15,52 @@
 
 ## 装上
 
-需要 DSH 0.2.0-rc.2 或更新（桌面端或 `dsh web`）。三种方式选一种：
+需要 DSH 0.2.0-rc.2 或更新（桌面端或 `dsh web`）。
 
-**方式一 · 从 npm（发布后可用）**
+装的是"插件组合包"，所以 DSH 只认 **安装 spec**（不是搜索词）。在桌面端走：侧栏 **插件** → 安装 → 粘贴下面任一 spec；或者用 CLI `dsh plugin --profile desktop add "<spec>"`。**装完不用重启，刷新一次页面即可。**
+
+### 一 · 从 GitHub 装（不需要 npm 账号）
+
+三种写法，效果一样，按你的网络和工具选：
+
+```bash
+# 1) git 协议（pnpm 会浅克隆）
+dsh plugin --profile desktop add "github:petex7238/DSH-Tag-Plugin#main"
+
+# 2) tarball 直链（没有 git 也能装，https 一次下载）
+dsh plugin --profile desktop add "https://github.com/petex7238/DSH-Tag-Plugin/archive/refs/heads/main.tar.gz"
+
+# 3) 下载 ZIP → 解压 → 用本地路径装
+#    浏览器打开仓库 → 绿色 Code 按钮 → Download ZIP → 解压到任意目录
+dsh plugin --profile desktop add "D:/tools/DSH-Tag-Plugin"
+```
+
+三点提醒：
+
+- **网络**：GitHub 装法要能访问 github.com。国内环境下 git 协议还需要给 git 配代理（`git config --global http.proxy http://127.0.0.1:7890`），tarball 直链走的是 https，通常更容易通。
+- **固定版本**：把 `#main` 换成 `#<commit sha>` 或 `#v0.1.0` 就不会被后续改动带着跑。
+- **更新**：`github:` / tarball 装的不会自动升级，重新执行一次安装命令即可（同一包名会覆盖）。
+
+### 二 · 从 npm 装（发布后可用）
 
 ```bash
 dsh plugin --profile desktop add dsh-code-marks
 ```
 
-或在桌面端：侧栏 **插件** → 安装 → 填入 `dsh-code-marks`。
+或在插件页填 `dsh-code-marks`。npm 的版本号即包版本，升级同样重装一次。
 
-**方式二 · 直接从 GitHub（现在就能用，不需要 npm）**
-
-```bash
-dsh plugin --profile desktop add "github:petex7238/DSH-Tag-Plugin#main"
-```
-
-**方式三 · 本地路径（改代码 / 开发）**
+### 三 · 本地路径（改代码 / 开发）
 
 ```bash
 git clone https://github.com/petex7238/DSH-Tag-Plugin.git
 dsh plugin --profile desktop add "/absolute/path/to/DSH-Tag-Plugin"
 ```
 
-用本地路径装时，仓库目录会被 `link` 进 profile，改 `plugin/client.js` 会被客户端 HMR 直接热替换，不用重启 DSH。
+仓库目录会被 `link` 进 profile，改 `plugin/client.js` 会被客户端 HMR 直接热替换，不用重启 DSH。
 
-装完即生效；如果页面没反应，刷新一次（F5）。
+### 装完怎么确认
+
+右上/侧栏 **插件** 列表里出现 `dsh-code-marks` 且为启用状态；在对话里选中一段助手回答，右边缘会冒出一根深蓝短条。
 
 ## 怎么用
 
