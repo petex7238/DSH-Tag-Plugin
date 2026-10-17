@@ -18,6 +18,7 @@ window.__ModuleLoader__.load({
     const RAIL_ATTR = 'data-dsh-cm-rail'
     const TIP_ATTR = 'data-dsh-cm-tip'
     const TOAST_ATTR = 'data-dsh-cm-toast'
+    const MENU_ATTR = 'data-dsh-cm-menu'
     const OWN_ATTR = 'data-dsh-cm'
     const LS_TAGS = 'dsh.code-marks.v1.tags'
     const LS_MARKS = 'dsh.code.marks.v2.' // + sessionId
@@ -1097,7 +1098,7 @@ window.__ModuleLoader__.load({
 
         const hint = document.createElement('div')
         hint.className = 'dcm-tip-hint'
-        hint.textContent = '左键跳转 · 右键删除'
+        hint.textContent = '左键跳转 · 右键菜单'
         tip.appendChild(hint)
 
         tip.style.display = 'block'
@@ -1135,11 +1136,85 @@ window.__ModuleLoader__.load({
         else if (!result.resolved) noticeAt(button, '已定位到这条消息，但原文已被改写，高亮对不上。')
       }
 
+      /** The one open bar menu, if any. Right-click never deletes on its own. */
+      let openMenuCleanup = null
+
+      function closeMenu() {
+        if (openMenuCleanup !== null) {
+          openMenuCleanup()
+          openMenuCleanup = null
+        }
+      }
+
+      /** A two-item menu at the pointer: jump here, or delete with an undo behind it. */
+      function openMenu(mark, button, event) {
+        closeMenu()
+        hideTip()
+        const element = document.createElement('div')
+        element.setAttribute(MENU_ATTR, '')
+        element.setAttribute(OWN_ATTR, '')
+        element.setAttribute('role', 'menu')
+        element.tabIndex = -1
+
+        const item = (label, className, run) => {
+          const entry = document.createElement('button')
+          entry.type = 'button'
+          entry.className = `dcm-menu-item${className === undefined ? '' : ` ${className}`}`
+          entry.setAttribute('role', 'menuitem')
+          entry.textContent = label
+          entry.addEventListener('click', (clickEvent) => {
+            clickEvent.preventDefault()
+            clickEvent.stopPropagation()
+            closeMenu()
+            run()
+          })
+          element.appendChild(entry)
+          return entry
+        }
+
+        item('跳转到这条标记', undefined, () => void activate(mark, button))
+        item('删除这条标记', 'dcm-menu-danger', () => removeMark(mark, button))
+
+        document.body.appendChild(element)
+        const own = element.getBoundingClientRect()
+        const x = event?.clientX ?? button.getBoundingClientRect().left
+        const y = event?.clientY ?? button.getBoundingClientRect().top
+        const left = Math.min(Math.max(8, x), Math.max(8, window.innerWidth - own.width - 8))
+        const top = Math.min(Math.max(8, y), Math.max(8, window.innerHeight - own.height - 8))
+        element.style.left = `${Math.round(left)}px`
+        element.style.top = `${Math.round(top)}px`
+        element.focus({ preventScroll: true })
+
+        const onOutside = (downEvent) => {
+          if (downEvent.target instanceof Element && downEvent.target.closest(`[${MENU_ATTR}]`) !== null) return
+          closeMenu()
+        }
+        const onKey = (keyEvent) => {
+          if (keyEvent.key === 'Escape') {
+            keyEvent.preventDefault()
+            closeMenu()
+          }
+        }
+        const onDismiss = () => closeMenu()
+        document.addEventListener('pointerdown', onOutside, true)
+        document.addEventListener('keydown', onKey, true)
+        document.addEventListener('scroll', onDismiss, true)
+        window.addEventListener('resize', onDismiss)
+        openMenuCleanup = () => {
+          document.removeEventListener('pointerdown', onOutside, true)
+          document.removeEventListener('keydown', onKey, true)
+          document.removeEventListener('scroll', onDismiss, true)
+          window.removeEventListener('resize', onDismiss)
+          element.remove()
+        }
+      }
+
       /**
-       * Delete one mark from its bar. Destructive and easy to trigger by accident,
-       * so the confirmation carries a five-second undo instead of a modal.
+       * Delete one mark from its bar. The menu is the guard; the five-second undo
+       * is the second one, so a mis-click never loses an anchor outright.
        */
       function removeMark(mark, button) {
+        closeMenu()
         hideTip()
         const sessionId = session
         if (sessionId === undefined) return
@@ -1168,7 +1243,7 @@ window.__ModuleLoader__.load({
         button.className = 'dcm-rail-bar'
         button.dataset.dcmBar = mark.id
         button.dataset.dcmIndex = String(index)
-        button.setAttribute('aria-label', `${tag?.name ?? '未分类'}：${clampText(mark.quote, 48)}（右键删除）`)
+        button.setAttribute('aria-label', `${tag?.name ?? '未分类'}：${clampText(mark.quote, 48)}（右键菜单）`)
         button.addEventListener('pointerenter', () => showTip(mark, button))
         button.addEventListener('pointerleave', () => scheduleHideTip())
         button.addEventListener('focus', () => showTip(mark, button))
@@ -1176,11 +1251,11 @@ window.__ModuleLoader__.load({
         button.addEventListener('click', () => {
           void activate(mark, button)
         })
-        // Right-click deletes; the shell's own menu must not open over the rail.
+        // Right-click opens the menu and keeps the shell's own menu off the rail.
         button.addEventListener('contextmenu', (event) => {
           event.preventDefault()
           event.stopPropagation()
-          removeMark(mark, button)
+          openMenu(mark, button, event)
         })
         button.addEventListener('keydown', (event) => {
           if (event.key !== 'Delete' && event.key !== 'Backspace') return
@@ -1254,6 +1329,7 @@ window.__ModuleLoader__.load({
           columnObserver = null
           observedColumn = null
           window.clearTimeout(hideTimer)
+          closeMenu()
           rail.remove()
           tip.remove()
         },
@@ -1676,7 +1752,7 @@ window.__ModuleLoader__.load({
 .dcm-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;}
 .dcm-color{height:22px;border-radius:6px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));background:transparent;color:inherit;font-size:11px;}
 .dcm-notice{position:sticky;bottom:0;margin:0 10px 10px;padding:7px 9px;border-radius:8px;background:rgba(245,158,11,.14);color:var(--dsw-alias-label-primary,#1f2328);font-size:11.5px;line-height:1.5;}
-[${TOOLBAR_ATTR}],[${TIP_ATTR}],[${TOAST_ATTR}]{--dcm-pop-bg:#232324;--dcm-pop-fg:#ececee;--dcm-pop-fg-dim:#c6c6cd;--dcm-pop-fg-faint:#a2a2aa;--dcm-pop-line:rgba(255,255,255,.13);--dcm-pop-hover:rgba(255,255,255,.09);}
+[${TOOLBAR_ATTR}],[${TIP_ATTR}],[${TOAST_ATTR}],[${MENU_ATTR}]{--dcm-pop-bg:#232324;--dcm-pop-fg:#ececee;--dcm-pop-fg-dim:#c6c6cd;--dcm-pop-fg-faint:#a2a2aa;--dcm-pop-line:rgba(255,255,255,.13);--dcm-pop-hover:rgba(255,255,255,.09);}
 /* The two floating surfaces are painted #232324 on purpose, in both themes, so
    their foregrounds are a fixed light palette tuned against that one background. */
 [${TOOLBAR_ATTR}]{position:fixed;z-index:2147483002;display:flex;align-items:center;gap:3px;padding:4px;border-radius:10px;background:var(--dcm-pop-bg);border:1px solid var(--dcm-pop-line);box-shadow:0 10px 30px rgba(0,0,0,.45);font-size:12px;color:var(--dcm-pop-fg);}
@@ -1712,6 +1788,11 @@ window.__ModuleLoader__.load({
 [${TOAST_ATTR}] i{width:7px;height:7px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
 [${TOAST_ATTR}] .dcm-toast-action{margin-left:7px;height:20px;padding:0 8px;border-radius:6px;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.10);color:var(--dcm-pop-fg);font-size:11px;cursor:pointer;line-height:1;}
 [${TOAST_ATTR}] .dcm-toast-action:hover{background:rgba(255,255,255,.20);border-color:rgba(255,255,255,.34);}
+[${MENU_ATTR}]{position:fixed;z-index:2147483005;display:flex;flex-direction:column;gap:1px;min-width:172px;padding:4px;border-radius:10px;background:var(--dcm-pop-bg);border:1px solid var(--dcm-pop-line);box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:12px;color:var(--dcm-pop-fg);outline:none;}
+.dcm-menu-item{display:flex;align-items:center;width:100%;height:26px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--dcm-pop-fg);font:inherit;font-size:12px;text-align:left;cursor:pointer;white-space:nowrap;}
+.dcm-menu-item:hover,.dcm-menu-item:focus-visible{background:var(--dcm-pop-hover);outline:none;}
+.dcm-menu-danger{color:#ff9d9d;}
+.dcm-menu-danger:hover,.dcm-menu-danger:focus-visible{background:rgba(239,68,68,.18);color:#ffb4b4;}
 ${CSS_HIGHLIGHT_BASE}
 @keyframes dsh-cm-flash{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.02)}}
 `

@@ -361,14 +361,46 @@
     scrollerEl.style.marginRight = ''
     t.rail().refresh()
 
-    // right-click a bar deletes the mark, with a five-second undo
+    // right-click opens a small menu; nothing is deleted until the item is chosen
     const freshBars = [...rail.querySelectorAll('.dcm-rail-bar')]
     const victimBar = freshBars.find((bar) => bar.dataset.dcmBar === farMark.id)
     check('rail: the target bar is still mounted', victimBar !== undefined)
     const beforeDelete = t.store.marksOf('s1').length
-    victimBar?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    const rightClick = () => victimBar?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 900, clientY: 320 }))
+    rightClick()
+    await tick(60)
+    const menu = document.querySelector('[data-dsh-cm-menu]')
+    check('menu: right-click opens it', menu !== null)
+    check('menu: it offers a delete item', menu !== null && [...menu.querySelectorAll('.dcm-menu-item')].some((entry) => entry.textContent.includes('删除')), menu && menu.textContent)
+    check('menu: it also offers the jump (left click equivalent)', menu !== null && [...menu.querySelectorAll('.dcm-menu-item')].some((entry) => entry.textContent.includes('跳转')))
+    check('menu: nothing is deleted yet', t.store.marksOf('s1').length === beforeDelete, t.store.marksOf('s1').length)
+    const menuStyle = menu === null ? {} : getComputedStyle(menu)
+    check('style: the menu is painted #232324', menuStyle.backgroundColor === 'rgb(35, 35, 36)', menuStyle.backgroundColor)
+    check('style: menu text contrast >= 7', contrast(menuStyle.color, menuStyle.backgroundColor) >= 7, contrast(menuStyle.color, menuStyle.backgroundColor).toFixed(2))
+    const menuBox = menu === null ? { left: 0, right: 0, top: 0, bottom: 0 } : menu.getBoundingClientRect()
+    check('menu: it stays inside the viewport', menuBox.left >= 8 && menuBox.right <= window.innerWidth - 8 && menuBox.top >= 8 && menuBox.bottom <= window.innerHeight - 8, { left: menuBox.left, right: menuBox.right, top: menuBox.top, bottom: menuBox.bottom })
+
+    // Escape dismisses without touching the mark
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await tick(60)
+    check('menu: Escape closes it', document.querySelector('[data-dsh-cm-menu]') === null)
+    check('menu: Escape deletes nothing', t.store.marksOf('s1').length === beforeDelete)
+
+    // a click outside dismisses it too
+    rightClick()
+    await tick(60)
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    await tick(60)
+    check('menu: an outside click closes it', document.querySelector('[data-dsh-cm-menu]') === null)
+    check('menu: an outside click deletes nothing', t.store.marksOf('s1').length === beforeDelete)
+
+    // choosing delete is the only way to actually delete from the rail
+    rightClick()
+    await tick(60)
+    document.querySelector('[data-dsh-cm-menu] .dcm-menu-danger')?.click()
     await tick(80)
-    check('rail: right-click deletes the mark', t.store.marksOf('s1').length === beforeDelete - 1, `${beforeDelete} -> ${t.store.marksOf('s1').length}`)
+    check('menu: choosing delete removes the mark', t.store.marksOf('s1').length === beforeDelete - 1, `${beforeDelete} -> ${t.store.marksOf('s1').length}`)
+    check('menu: the menu closes after choosing', document.querySelector('[data-dsh-cm-menu]') === null)
     check('rail: the deleted bar disappears', rail.querySelectorAll('.dcm-rail-bar').length === beforeDelete - 1, rail.querySelectorAll('.dcm-rail-bar').length)
     const undoToast = document.querySelector('[data-dsh-cm-toast]')
     check('rail: deletion offers an undo', undoToast !== null && undoToast.textContent.includes('撤销') && undoToast.textContent.includes('已删除'), undoToast && undoToast.textContent)
