@@ -361,6 +361,24 @@
     scrollerEl.style.marginRight = ''
     t.rail().refresh()
 
+    // right-click a bar deletes the mark, with a five-second undo
+    const freshBars = [...rail.querySelectorAll('.dcm-rail-bar')]
+    const victimBar = freshBars.find((bar) => bar.dataset.dcmBar === farMark.id)
+    check('rail: the target bar is still mounted', victimBar !== undefined)
+    const beforeDelete = t.store.marksOf('s1').length
+    victimBar?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await tick(80)
+    check('rail: right-click deletes the mark', t.store.marksOf('s1').length === beforeDelete - 1, `${beforeDelete} -> ${t.store.marksOf('s1').length}`)
+    check('rail: the deleted bar disappears', rail.querySelectorAll('.dcm-rail-bar').length === beforeDelete - 1, rail.querySelectorAll('.dcm-rail-bar').length)
+    const undoToast = document.querySelector('[data-dsh-cm-toast]')
+    check('rail: deletion offers an undo', undoToast !== null && undoToast.textContent.includes('撤销') && undoToast.textContent.includes('已删除'), undoToast && undoToast.textContent)
+    check('rail: the undo toast accepts clicks', undoToast !== null && getComputedStyle(undoToast).pointerEvents === 'auto', undoToast && getComputedStyle(undoToast).pointerEvents)
+    undoToast?.querySelector('.dcm-toast-action')?.click()
+    await tick(80)
+    check('rail: undo brings the mark back', t.store.marksOf('s1').length === beforeDelete, t.store.marksOf('s1').length)
+    check('rail: undo brings the bar back', rail.querySelectorAll('.dcm-rail-bar').length === beforeDelete, rail.querySelectorAll('.dcm-rail-bar').length)
+    check('rail: the undo toast closes after use', document.querySelector('[data-dsh-cm-toast]') === null)
+
     // ---- 9. jump to a mark that is far below the fold
     scroller.scrollTop = 0
     await tick(40)

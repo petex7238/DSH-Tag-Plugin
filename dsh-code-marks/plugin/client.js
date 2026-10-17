@@ -724,6 +724,54 @@ window.__ModuleLoader__.load({
     }
     //#endregion
 
+    //#region toast
+    /**
+     * One short-lived confirmation pinned to an anchor rect. Without an action it
+     * is pure feedback and ignores the pointer; with one (undo) it becomes
+     * interactive and lingers, because that click has to be reachable.
+     */
+    function showToast({ text, rect, color, actionLabel, onAction, duration }) {
+      for (const stale of document.querySelectorAll(`[${TOAST_ATTR}]`)) stale.remove()
+      const element = document.createElement('div')
+      element.setAttribute(TOAST_ATTR, '')
+      element.setAttribute(OWN_ATTR, '')
+      element.setAttribute('role', 'status')
+      if (color !== undefined) {
+        const dot = document.createElement('i')
+        dot.style.background = color
+        element.appendChild(dot)
+      }
+      element.appendChild(document.createTextNode(text))
+      const interactive = typeof onAction === 'function' && typeof actionLabel === 'string'
+      if (interactive) {
+        const action = document.createElement('button')
+        action.type = 'button'
+        action.className = 'dcm-toast-action'
+        action.textContent = actionLabel
+        action.addEventListener('click', (event) => {
+          event.preventDefault()
+          element.remove()
+          onAction()
+        })
+        element.appendChild(action)
+        element.style.pointerEvents = 'auto'
+      }
+      document.body.appendChild(element)
+      const own = element.getBoundingClientRect()
+      const anchor = rect ?? { left: window.innerWidth / 2, width: 0, top: window.innerHeight / 2, height: 0 }
+      const left = Math.min(Math.max(8, anchor.left + anchor.width / 2 - own.width / 2), Math.max(8, window.innerWidth - own.width - 8))
+      const top = Math.max(8, anchor.top - own.height - 10)
+      element.style.left = `${Math.round(left)}px`
+      element.style.top = `${Math.round(top)}px`
+      element.classList.add('dcm-toast-in')
+      window.setTimeout(() => {
+        element.classList.add('dcm-toast-out')
+        window.setTimeout(() => element.remove(), 240)
+      }, Number.isFinite(duration) ? duration : 1500)
+      return element
+    }
+    //#endregion
+
     //#region selection toolbar
     /**
      * The mark affordance: a floating tag bar over the selection. Built with plain
@@ -758,31 +806,6 @@ window.__ModuleLoader__.load({
         hideTimer = window.setTimeout(hide, 120)
       }
 
-      /** One short confirmation where the selection was — no column, no focus change. */
-      function toast(text, rect, color) {
-        for (const stale of document.querySelectorAll(`[${TOAST_ATTR}]`)) stale.remove()
-        const element = document.createElement('div')
-        element.setAttribute(TOAST_ATTR, '')
-        element.setAttribute(OWN_ATTR, '')
-        element.setAttribute('role', 'status')
-        const dot = document.createElement('i')
-        dot.style.background = color
-        element.appendChild(dot)
-        element.appendChild(document.createTextNode(text))
-        document.body.appendChild(element)
-        const own = element.getBoundingClientRect()
-        const anchor = rect ?? { left: window.innerWidth / 2, width: 0, top: window.innerHeight / 2, height: 0 }
-        const left = Math.min(Math.max(8, anchor.left + anchor.width / 2 - own.width / 2), window.innerWidth - own.width - 8)
-        const top = Math.max(8, anchor.top - own.height - 10)
-        element.style.left = `${Math.round(left)}px`
-        element.style.top = `${Math.round(top)}px`
-        element.classList.add('dcm-toast-in')
-        window.setTimeout(() => {
-          element.classList.add('dcm-toast-out')
-          window.setTimeout(() => element.remove(), 240)
-        }, 1500)
-      }
-
       function markWith(tag) {
         if (pending === null) return
         const sessionId = currentSession()
@@ -809,7 +832,7 @@ window.__ModuleLoader__.load({
         refreshHighlights(sessionId, null)
         // Deliberately not opening the right column: the confirmation lives where
         // the selection was, and the rail bar is already there to click.
-        toast(`已标记「${tag.name}」`, rect, paletteOf(tag.color).dot)
+        showToast({ text: `已标记「${tag.name}」`, rect, color: paletteOf(tag.color).dot })
       }
 
       function addTagAndMark(input) {
@@ -1072,6 +1095,11 @@ window.__ModuleLoader__.load({
         meta.textContent = bits.join(' · ')
         tip.appendChild(meta)
 
+        const hint = document.createElement('div')
+        hint.className = 'dcm-tip-hint'
+        hint.textContent = '左键跳转 · 右键删除'
+        tip.appendChild(hint)
+
         tip.style.display = 'block'
         tip.style.visibility = 'hidden'
         const bar = button.getBoundingClientRect()
@@ -1107,6 +1135,32 @@ window.__ModuleLoader__.load({
         else if (!result.resolved) noticeAt(button, '已定位到这条消息，但原文已被改写，高亮对不上。')
       }
 
+      /**
+       * Delete one mark from its bar. Destructive and easy to trigger by accident,
+       * so the confirmation carries a five-second undo instead of a modal.
+       */
+      function removeMark(mark, button) {
+        hideTip()
+        const sessionId = session
+        if (sessionId === undefined) return
+        const rect = button.getBoundingClientRect()
+        const tag = store.getSnapshot().tags.find((entry) => entry.id === mark.tagId)
+        store.removeMark(sessionId, mark.id)
+        refreshHighlights(sessionId, null)
+        showToast({
+          text: `已删除「${tag?.name ?? '未分类'}」标记`,
+          rect,
+          color: paletteOf(tag?.color).dot,
+          actionLabel: '撤销',
+          duration: 5000,
+          onAction: () => {
+            store.addMark(sessionId, mark)
+            refreshHighlights(sessionId, null)
+            railRef?.refresh(true)
+          },
+        })
+      }
+
       function barFor(mark, index) {
         const tag = store.getSnapshot().tags.find((entry) => entry.id === mark.tagId)
         const button = document.createElement('button')
@@ -1114,13 +1168,24 @@ window.__ModuleLoader__.load({
         button.className = 'dcm-rail-bar'
         button.dataset.dcmBar = mark.id
         button.dataset.dcmIndex = String(index)
-        button.setAttribute('aria-label', `${tag?.name ?? '未分类'}：${clampText(mark.quote, 48)}`)
+        button.setAttribute('aria-label', `${tag?.name ?? '未分类'}：${clampText(mark.quote, 48)}（右键删除）`)
         button.addEventListener('pointerenter', () => showTip(mark, button))
         button.addEventListener('pointerleave', () => scheduleHideTip())
         button.addEventListener('focus', () => showTip(mark, button))
         button.addEventListener('blur', () => scheduleHideTip())
         button.addEventListener('click', () => {
           void activate(mark, button)
+        })
+        // Right-click deletes; the shell's own menu must not open over the rail.
+        button.addEventListener('contextmenu', (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          removeMark(mark, button)
+        })
+        button.addEventListener('keydown', (event) => {
+          if (event.key !== 'Delete' && event.key !== 'Backspace') return
+          event.preventDefault()
+          removeMark(mark, button)
         })
         return button
       }
@@ -1640,10 +1705,13 @@ window.__ModuleLoader__.load({
 .dcm-tip-quote-code{font-family:ui-monospace,SFMono-Regular,"Cascadia Code",Consolas,monospace;font-size:11px;color:var(--dcm-pop-fg);}
 .dcm-tip-meta{margin-top:4px;font-size:10px;color:var(--dcm-pop-fg-faint);}
 .dcm-tip-notice{font-size:11.5px;line-height:1.5;color:var(--dcm-pop-fg);}
+.dcm-tip-hint{margin-top:3px;font-size:10px;color:var(--dcm-pop-fg-faint);opacity:.85;}
 [${TOAST_ATTR}]{position:fixed;z-index:2147483004;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;background:var(--dcm-pop-bg);border:1px solid var(--dcm-pop-line);box-shadow:0 10px 24px rgba(0,0,0,.42);color:var(--dcm-pop-fg);font-size:12px;pointer-events:none;opacity:0;transform:translateY(2px);transition:opacity .18s ease-out,transform .18s ease-out;}
 [${TOAST_ATTR}].dcm-toast-in{opacity:1;transform:none;}
 [${TOAST_ATTR}].dcm-toast-out{opacity:0;transform:translateY(-2px);}
 [${TOAST_ATTR}] i{width:7px;height:7px;border-radius:50%;flex:0 0 auto;box-shadow:0 0 0 1px rgba(0,0,0,.35);}
+[${TOAST_ATTR}] .dcm-toast-action{margin-left:7px;height:20px;padding:0 8px;border-radius:6px;border:1px solid rgba(255,255,255,.24);background:rgba(255,255,255,.10);color:var(--dcm-pop-fg);font-size:11px;cursor:pointer;line-height:1;}
+[${TOAST_ATTR}] .dcm-toast-action:hover{background:rgba(255,255,255,.20);border-color:rgba(255,255,255,.34);}
 ${CSS_HIGHLIGHT_BASE}
 @keyframes dsh-cm-flash{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(1.02)}}
 `
