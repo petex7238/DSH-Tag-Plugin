@@ -1,5 +1,7 @@
 # dsh-code-marks
 
+[![test](https://github.com/petex7238/DSH-Tag-Plugin/actions/workflows/test.yml/badge.svg)](https://github.com/petex7238/DSH-Tag-Plugin/actions/workflows/test.yml)
+
 > Select code or a sentence in a DeepSeek Harness conversation, tag it, and jump back to **that exact line** later — from a rail of deep-blue bars on the conversation's right edge, or from a right-sidebar tab. Marks live outside the transcript, so the next twenty follow-up questions cannot push them away.
 
 在 DSH 对话里**选中一段代码或一句话 → 打个标签**，它就固定下来：对话右边缘长出一根深蓝短条，右侧栏的「标记」页签里也有一条记录。点任意一处，那段原文**瞬时**跳到**可视区正中间**、闪一下并选中。
@@ -130,6 +132,26 @@ npm test             # 100 项断言，headless Chrome
 - `CHROME_PATH` 可指定浏览器；否则自动找 Chrome/Edge/Chromium。
 - 没有 `puppeteer-core` 时会退而使用 DSH profile 里已有的那一份（需要 `DSH_HOME` + `DSH_PROFILE`）。
 - `设计说明.md` 记录了每个设计决策的理由与验证矩阵（中文）。
+
+### 发布（维护者）
+
+包名 `dsh-code-marks`，`publishConfig.access` 已是 `public`。两条路，选一条：
+
+**A. 本机发**（需要先 `npm login`）：
+
+```bash
+npm publish
+```
+
+**B. 让 GitHub 代发**（本机网络/登录不顺时用这条）：
+
+1. 在 npmjs.com 生成 **Automation** 类型 token（不会弹 OTP），权限 Read and write；
+2. 仓库 → Settings → Secrets and variables → Actions → 新建 secret `NPM_TOKEN`；
+3. 发一个 GitHub Release，或手动跑 `publish` workflow。
+
+`publish` workflow 会先 `npm pack --dry-run` 打印将发布的文件清单，再 `npm publish`；版本冲突时 npm 会直接报错。
+
+发新版：`npm version patch`（或 minor/major）→ push → 再走上面任一方式。
 
 ## 许可
 

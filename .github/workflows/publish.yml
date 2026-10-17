@@ -1,0 +1,44 @@
+name: publish
+
+# Publishes this package to npm from GitHub's runners, so publishing does not
+# depend on the local machine's network or npm login.
+#
+# One-time setup:
+#   1. https://www.npmjs.com/settings/<you>/tokens → Generate New Token →
+#      type **Automation** (no OTP prompt) → Read and write.
+#   2. This repository → Settings → Secrets and variables → Actions →
+#      New repository secret → name `NPM_TOKEN`, value the token.
+#   3. Either publish a GitHub Release, or run this workflow manually.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Require the NPM_TOKEN secret
+        if: ${{ secrets.NPM_TOKEN == '' }}
+        run: |
+          echo "::error::Missing the NPM_TOKEN secret. Create an Automation token at"
+          echo "https://www.npmjs.com/settings/~your-user~/tokens and add it under"
+          echo "Settings -> Secrets and variables -> Actions."
+          exit 1
+
+      - name: Show what will be published
+        run: npm pack --dry-run
+
+      - name: Publish
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
