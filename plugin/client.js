@@ -1098,20 +1098,21 @@ window.__ModuleLoader__.load({
       }
     }
 
-    /** Where the rail belongs: the upper right edge of the conversation column. */
+    /** Where the rail belongs: the upper LEFT edge of the conversation column. */
     function railGeometry() {
       const scroller = document.querySelector('[data-conversation-scroll]')
       if (scroller === null) return null
       const rect = scroller.getBoundingClientRect()
       if (rect.width < 240 || rect.height < 200) return null
-      const right = Math.max(4, window.innerWidth - rect.right + 4)
+      // The left edge: the shell's own turn ticks live on the right edge, so the
+      // marks rail sits opposite them instead of on top of them.
+      const left = Math.max(4, rect.left + 4)
       const top = Math.max(72, rect.top + 76)
-      // Keep the rail in the column's upper part so it never grows into the
-      // shell's own turn ticks (which sit vertically centred); overflow scrolls.
+      // Keep the rail in the column's upper part; overflow scrolls inside it.
       const cap = Math.max(RAIL_PITCH * 3, Math.floor(rect.height * 0.42))
       const room = Math.min(window.innerHeight - top - 96, cap)
       if (room < RAIL_PITCH * 3) return null
-      return { right, top, room }
+      return { left, top, room }
     }
 
     function createMarkRail(ctx) {
@@ -1197,7 +1198,10 @@ window.__ModuleLoader__.load({
         tip.style.visibility = 'hidden'
         const bar = button.getBoundingClientRect()
         const own = tip.getBoundingClientRect()
-        const left = Math.max(8, bar.left - own.width - 10)
+        // The rail hugs the column's left edge, so the card opens to its right;
+        // it flips back to the left only when the right side has no room.
+        const toRight = bar.right + 10 + own.width + 8 <= window.innerWidth
+        const left = toRight ? bar.right + 10 : Math.max(8, bar.left - own.width - 10)
         const top = Math.max(8, Math.min(bar.top + bar.height / 2 - own.height / 2, window.innerHeight - own.height - 8))
         tip.style.left = `${Math.round(left)}px`
         tip.style.top = `${Math.round(top)}px`
@@ -1215,7 +1219,8 @@ window.__ModuleLoader__.load({
         tip.style.display = 'block'
         const bar = button.getBoundingClientRect()
         const own = tip.getBoundingClientRect()
-        tip.style.left = `${Math.round(Math.max(8, bar.left - own.width - 10))}px`
+        const toRight = bar.right + 10 + own.width + 8 <= window.innerWidth
+        tip.style.left = `${Math.round(toRight ? bar.right + 10 : Math.max(8, bar.left - own.width - 10))}px`
         tip.style.top = `${Math.round(Math.max(8, Math.min(bar.top - own.height / 2, window.innerHeight - own.height - 8)))}px`
         window.clearTimeout(hideTimer)
         hideTimer = window.setTimeout(hideTip, 2600)
@@ -1428,7 +1433,8 @@ window.__ModuleLoader__.load({
         if (shown) {
           rail.dataset.tone = tone
           rail.style.display = 'flex'
-          rail.style.right = `${Math.round(geometry.right)}px`
+          rail.style.left = `${Math.round(geometry.left)}px`
+          rail.style.right = 'auto'
           rail.style.top = `${Math.round(geometry.top)}px`
           rail.style.maxHeight = `${Math.min(geometry.room, visibleMarks.length * RAIL_PITCH + 4)}px`
         } else {
@@ -1910,12 +1916,13 @@ window.__ModuleLoader__.load({
 .dcm-toolbar-add:hover{background:var(--dcm-pop-hover);color:var(--dcm-pop-fg);}
 .dcm-toolbar-input{width:110px;height:24px;padding:0 7px;border-radius:7px;border:1px solid #4d93f8;background:rgba(255,255,255,.07);color:var(--dcm-pop-fg);font-size:12px;outline:none;}
 .dcm-toolbar-input::placeholder{color:var(--dcm-pop-fg-faint);}
-/* Edge rail: one 18x2 deep-blue bar per mark, 10px pitch, right-aligned — the
-   same shape as the shell's turn ticks, so it reads as part of the transcript. */
-[${RAIL_ATTR}]{position:fixed;z-index:2147482980;display:flex;flex-direction:column;align-items:flex-end;width:28px;padding:2px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;}
+/* Edge rail: one 18x2 deep-blue bar per mark, 10px pitch, left-aligned on the
+   conversation column's LEFT edge — the same shape as the shell's turn ticks,
+   which live on the right edge, so the two never overlap. */
+[${RAIL_ATTR}]{position:fixed;z-index:2147482980;display:flex;flex-direction:column;align-items:flex-start;width:28px;padding:2px 0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;}
 [${RAIL_ATTR}]::-webkit-scrollbar{display:none}
-.dcm-rail-bar{position:relative;flex:0 0 auto;width:100%;height:10px;padding:0;margin:0;border:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:flex-end;}
-.dcm-rail-bar::after{content:"";display:block;width:18px;height:2px;border-radius:2px;background:#1e3a8a;opacity:.9;transform-origin:100% 50%;transition:width .14s,opacity .14s,background-color .14s;}
+.dcm-rail-bar{position:relative;flex:0 0 auto;width:100%;height:10px;padding:0;margin:0;border:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:flex-start;}
+.dcm-rail-bar::after{content:"";display:block;width:18px;height:2px;border-radius:2px;background:#1e3a8a;opacity:.9;transform-origin:0 50%;transition:width .14s,opacity .14s,background-color .14s;}
 [${RAIL_ATTR}][data-tone="dark"] .dcm-rail-bar::after{background:#7aa2ff;opacity:.85;}
 .dcm-rail-bar:hover::after,.dcm-rail-bar:focus-visible::after{width:25px;opacity:1;background:#1d4ed8;}
 [${RAIL_ATTR}][data-tone="dark"] .dcm-rail-bar:hover::after{background:#a9c8ff;}

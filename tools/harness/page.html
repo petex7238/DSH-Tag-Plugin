@@ -317,7 +317,10 @@
     const bars = rail === null ? [] : [...rail.querySelectorAll('.dcm-rail-bar')]
     const sessionMarks = t.store.marksOf('s1')
     check('rail: one bar per mark of the session', bars.length === sessionMarks.length, `${bars.length} vs ${sessionMarks.length}`)
-    check('rail: visible and hugging the right edge', rail !== null && rail.style.display === 'flex' && parseFloat(rail.style.right) >= 4, rail && { display: rail.style.display, right: rail.style.right, top: rail.style.top })
+    const railBox = rail === null ? null : rail.getBoundingClientRect()
+    const columnBoxForRail = scroller.getBoundingClientRect()
+    check('rail: visible on the column LEFT edge', rail !== null && rail.style.display === 'flex' && railBox !== null && railBox.left <= columnBoxForRail.left + 10 && railBox.left >= columnBoxForRail.left - 4, rail && { display: rail.style.display, left: rail.style.left, railBoxLeft: railBox && Math.round(railBox.left), columnLeft: Math.round(columnBoxForRail.left) })
+    check('rail: it no longer sits on the right edge', railBox !== null && railBox.right < columnBoxForRail.right - 40, railBox && { railRight: Math.round(railBox.right), columnRight: Math.round(columnBoxForRail.right) })
     const ordered = [...sessionMarks].sort((a, b) => (a.turn - b.turn) || (a.start - b.start))
     check('rail: bars read top-down in transcript order', bars.length === ordered.length && bars.every((bar, index) => bar.dataset.dcmBar === ordered[index].id), bars.map((bar) => bar.dataset.dcmBar))
 
@@ -359,13 +362,13 @@
 
     // placement follows the column, and a pure placement change keeps the bars
     const scrollerEl = document.getElementById('scroller')
-    const rightBefore = rail.style.right
+    const leftBefore = rail.style.left
     const firstBar = rail.querySelector('.dcm-rail-bar')
-    scrollerEl.style.marginRight = '60px'
+    scrollerEl.style.marginLeft = '60px'
     t.rail().refresh()
-    check('rail: placement follows the column edge', parseFloat(rail.style.right) > parseFloat(rightBefore), `${rightBefore} -> ${rail.style.right}`)
+    check('rail: placement follows the column edge', parseFloat(rail.style.left) > parseFloat(leftBefore), `${leftBefore} -> ${rail.style.left}`)
     check('rail: a placement change does not rebuild the bars', rail.querySelector('.dcm-rail-bar') === firstBar)
-    scrollerEl.style.marginRight = ''
+    scrollerEl.style.marginLeft = ''
     t.rail().refresh()
 
     // right-click opens a small menu; nothing is deleted until the item is chosen
